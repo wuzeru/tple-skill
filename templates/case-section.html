@@ -1,0 +1,38 @@
+<section class="case" id="{{ID}}">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">{{UC}} · {{ID}}</p>
+      <h2>{{TITLE}}</h2>
+      <p class="run-meta">最后跑 {{LAST_RAN}} · 共跑 {{RUN_COUNT}} 次</p>
+    </div>
+    <span class="badge {{STATUS_LC}}">{{STATUS}}</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>{{STEPS}}</p>
+      <h3>期望</h3>
+      <p>{{EXPECTED}}</p>
+      <h3>结果备注</h3>
+      <p class="notes">{{NOTES}}</p>
+{{FIX_LOG}}
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/{{ID}}.png">
+        <source src="videos/{{ID}}.mp4" type="video/mp4" />
+        <source src="videos/{{ID}}.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/{{ID}}.png" data-caption="结束帧 · {{ID}}" aria-label="放大结束帧">
+            <img src="videos/{{ID}}.png" alt="{{ID}} screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+{{FAIL_SHOT}}
+      </div>
+    </div>
+  </div>
+</section>

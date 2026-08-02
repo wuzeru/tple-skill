@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{TITLE}}</title>
+  <style>
+{{CSS}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <div class="brand">
+        <strong>{{BRAND_STRONG}}</strong>
+        <span>{{BRAND_SPAN}}</span>
+      </div>
+      <div class="nav-label">CASES</div>
+{{NAV}}
+    </nav>
+    <main>
+      <h1>{{H1}}</h1>
+      <p class="lede">{{LEDE}}</p>
+      <p class="meta">{{META_ENV}}</p>
+      <p class="meta">{{META_RECORDING}}</p>
+      <div class="summary">
+        <span class="chip pass">PASS {{PASS}}</span>
+        <span class="chip fail">FAIL {{FAIL}}</span>
+        <span class="chip blocked">BLOCKED {{BLOCKED}}</span>
+        <span class="chip">合计 {{TOTAL}}</span>
+      </div>
+{{FIX_SUMMARY}}
+{{SECTIONS}}
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="lightbox-backdrop" data-lightbox-close aria-label="关闭放大"></button>
+    <figure class="lightbox-panel" role="dialog" aria-modal="true" aria-label="关键帧放大">
+      <button type="button" class="lightbox-close" data-lightbox-close aria-label="关闭">×</button>
+      <img id="lightbox-img" alt="" />
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
+
+  <script>
+    (() => {
+      const box = document.getElementById("lightbox");
+      const img = document.getElementById("lightbox-img");
+      const cap = document.getElementById("lightbox-caption");
+      if (!box || !img) return;
+
+      function openLightbox(src, caption) {
+        img.src = src;
+        img.alt = caption || "";
+        cap.textContent = caption || "";
+        box.hidden = false;
+        document.body.classList.add("lightbox-open");
+      }
+
+      function closeLightbox() {
+        box.hidden = true;
+        img.removeAttribute("src");
+        document.body.classList.remove("lightbox-open");
+      }
+
+      document.addEventListener("click", (event) => {
+        const zoom = event.target.closest(".shot-zoom");
+        if (zoom) {
+          openLightbox(zoom.dataset.full || zoom.querySelector("img")?.src, zoom.dataset.caption || "");
+          return;
+        }
+        if (event.target.closest("[data-lightbox-close]")) closeLightbox();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !box.hidden) closeLightbox();
+      });
+    })();
+  </script>
+</body>
+</html>
