@@ -16,11 +16,11 @@
 
 ```bash
 # 1. clone
-git clone https://github.com/YOUR_USER/tple-skill.git ~/repos/tple-skill
+git clone https://github.com/wuzeru/tple-skill.git ~/Documents/skill/tple-skill
 
 # 2. 建软链（Claude Code + Cursor）
-ln -s ~/repos/tple-skill ~/.claude/skills/tple-skill
-ln -s ~/repos/tple-skill ~/.cursor/skills/tple-skill
+ln -s ~/Documents/skill/tple-skill ~/.claude/skills/tple-skill
+ln -s ~/Documents/skill/tple-skill ~/.cursor/skills/tple-skill
 ```
 
 装好后在 Claude Code 或 Cursor 里说 `tple` / `TPLE` / `E2E 录屏验收` 即可触发。
