@@ -11,7 +11,7 @@ description: >-
 
 把「功能切片 / Issue」做成**可打开的 HTML 验收包**：每个 case 一段视频 + 截图 + 步骤/期望/结果。
 
-与 `e2e-verify`（偏 checklist + 截图 markdown）和 `html-report`（偏方案/分析单页）不同：本 skill 交付**带媒体的按 case 验收站**。
+定位：不做 checklist + 截图 markdown 式验收，而是交付**带媒体的按 case 验收站**。
 
 ## 交付物
 
@@ -27,12 +27,6 @@ docs/<slice>-e2e/                 # 或仓库约定目录
     01-xxx-fail.png               # 可选中间失败态
 ```
 
-副本（便于本地打开 / 走 html-report 工作流）：
-
-```
-~/Documents/_agent/html-report-skill/workspace/YYYYMMDD-<slice>-e2e/
-```
-
 聊天里只回：报告路径、PASS/FAIL 汇总、异常 case。
 
 ## 流程总览
@@ -45,7 +39,7 @@ Task Progress:
 - [ ] 4. 跑全量，写 meta.jsonl，用 ffprobe 验视频时长
 - [ ] 5. auto-fix loop：FAIL case → 分析 → 改代码 → 重测（最多 3 轮）
 - [ ] 6. build-report → index.html（必须用本 skill 模板）
-- [ ] 7. 复制到 html-report workspace（可选上传 R2）
+- [ ] 7. 分发（直接打开本地报告，或自行托管/上传）
 ```
 
 ---
@@ -120,12 +114,33 @@ id,module,title,precondition,steps,expected,priority,status,notes
 
 ### 2. 环境
 
+**先跑依赖检查（必须，缺依赖先自动安装，装不上再报告用户）：**
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>
+# 例如 --url http://localhost:3000；不传 --url 则只查工具不查目标
+```
+
+检查 node ≥18 / agent-browser / ffmpeg / ffprobe / 目标 web 可达；全部 ✓ 才进入后续步骤。
+
+**退出码非 0 时：自动安装缺失工具，装完复检，通过才继续：**
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失清单安装 + 复检
+# 或按 check-env 打印的指引手动装：
+#   agent-browser → npm i -g agent-browser && agent-browser install
+#   ffmpeg/ffprobe → brew install ffmpeg（或系统包管理器）
+```
+
+装完**重跑 `check-env`** 确认全部 ✓，再进入后续步骤。安装失败（无网络 / 无权限 / 目标 web 起不来）才停下来向用户如实报告，不要带病继续，也不要假装检查通过。
+
 - 确认 web / api 可访问；多 worktree 时**避开占用端口**，用 env 注入：
   - `WEB_URL` / `API_URL`
 - 破坏性探测（如 `kill -STOP` API）跑完必须 `kill -CONT`
 - **必须清理残留 agent-browser**（勿杀用户日常 Chrome.app）：
 
 ```bash
+agent-browser close --all 2>/dev/null || true   # 先关 daemon session，防串页到其他项目
 pkill -f 'agent-browser-darwin-arm64' 2>/dev/null || true
 pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
 sleep 1.5
@@ -150,7 +165,7 @@ sleep 1.5
 3. 写回 token + **一次** `open` 到目标页（`record` 会刷新上下文）
 4. 操作；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
 5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
-6. 立刻 `ffprobe`：duration **≥ 4s** 则转 mp4 采用；否则用分镜回退
+6. 立刻 `ffprobe`：duration **≥ 4s** 则转 mp4 采用；**短/空（<4s 或 ~20KB 级别）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退
 
 ```bash
 # 录后验收
@@ -160,21 +175,47 @@ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 videos/02-x
 **分镜回退**（原生 < 4s 时）：关键步骤 `screenshot` → ffmpeg concat（每帧约 1.5–1.8s）。  
 `scale=trunc(iw/2)*2:trunc(ih/2)*2` **必须**（375 奇数宽会导致空 mp4）。
 
+**黑屏两个坑（必读）：**
+
+1. **record 在页面渲染前 start → 开头黑帧。** 先 `open` + `wait` 等页面渲染完成，再 `record start`；不要在 open 之前或同一拍 start。
+2. **纯 API case 没有录屏/截图 → 报告引用不存在的媒体 → 播放器黑块。** 每个 case 都必须产出 mp4 或 png（哪怕用终端输出截图做分镜）。生成报告前校验：meta 里每个 id 在 `videos/` 下至少有 `.mp4` 或 `.png`，缺了就补，勿让报告指向空文件。
+
 已知仍易把原生打短、可接受回退的场景：`kill -STOP` API + 长轮询；录中反复 `set viewport`（如 375 移动端）。
 
 #### agent-browser 操作要点
 
-- **每 case 独立 `--session`**，结束 `close`；case 前 `purge` 残留进程
+- **写脚本前先过一遍命令速查**（[reference.md](reference.md) 开头「最小命令速查」，或 `agent-browser skills get core`）：`@` 只配 ref（`@e3`）、CSS 选择器不带 `@`、`eval` 的 JS 用双引号包裹、读文本用 `get text body`（没有裸 `body` 命令）
+- **每 case 独立 `--session`**，结束 `close`；case 前 `purge` 残留进程（含 `close --all`）
 - **输入用 `fill @ref text`**（自带清空）；失败再用页面内设 value + `input`/`change` 事件  
   - **禁止** `press Meta+a` / `Cmd+A`：按键可能漏到 macOS 前台（曾误出「关于本机」等系统窗）
 - 登录态：缓存 token；`record start` 后必须写回
 - 页面变化后重新 `snapshot -i` 再点 ref
-- 断言：`body` 文本 / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
+- 断言：`get text body` / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
+- **断言防假阳性**：命令报连接错误 / 页面为空时，判 BLOCKED 或重试，不能按「数据无变化」判 PASS（曾把 eval 连接失败误判成校验生效）
 - 同步更新 `runs.json`：该 case 的 `lastRanAt`（ISO）与 `runCount`（累加）；报告展示「最后跑 / 共跑 N 次」
 - 关键帧截图须可点击放大（模板已带 lightbox，勿去掉）
 - 关键帧仍可 `screenshot`（报告 poster / 回退分镜），但不要用 `Meta+*` 系统快捷键
 
 细节见 [reference.md](reference.md)。
+
+#### 点击纪律（视口检查，必读）
+
+`click @ref` **不会自动滚动**。元素在视口外时点击会**静默落空**：工具返回 `✓ Done`，但页面毫无反应，且没有任何报错。这是最隐蔽的失败模式，曾把一个真实支付按钮的点击误判成「PSP 反自动化」，浪费多轮排查。
+
+**打开页面后、点击前，先检查目标元素是否在视口内；不在就先 `scrollintoview @ref` 再点：**
+
+```bash
+# 1) 查元素 bounding box 与视口关系
+agent-browser eval "(() => { const el = document.querySelector('<selector>'); const r = el.getBoundingClientRect(); return JSON.stringify({ top: r.top, bottom: r.bottom, vh: innerHeight }); })()"
+# 2) bottom > vh 或 top < 0 → 在视口外，先滚入再点
+agent-browser scrollintoview @ref
+agent-browser click @ref        # 或鼠标坐标点击
+```
+
+**点击后必须验证效果，不能信 `✓ Done`：** 截图确认状态、或确认 URL/DOM 变化、或查目标 API 是否产生记录。
+
+**连续两次「点击无效果」时，先回到基本事实**（元素在哪、可不可见、点没点上、坐标在不在视口内），不要急着归因到外部系统（风控、反自动化、第三方故障）。从「沉默」里编理论，是最贵的错误。
+
 
 ---
 
@@ -317,25 +358,20 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 
 ### 7. 分发
 
-```bash
-DEST="$HOME/Documents/_agent/html-report-skill/workspace/$(date +%Y%m%d)-<slice>-e2e"
-mkdir -p "$DEST/videos"
-cp index.html meta.jsonl "$DEST/"
-cp videos/* "$DEST/videos/"
-```
+报告目录 `docs/<slice>-e2e/` 是自包含的（CSS 内联、视频相对路径），直接本地打开 `index.html` 即可验收。
 
-公网分享时走 `html-report` skill 的 R2 流程（整目录需自行处理相对视频路径，或打 zip）。
+如需分享：把整个目录（含 `videos/`）压缩或上传到任意静态托管。注意保持 `videos/` 相对路径不变；若托管端需要绝对路径，需自行调整 HTML 中的引用。
 
 ---
 
 ## 质量门槛（完成前自检）
 
-- [ ] 开跑前 / 每 case 前已清理残留 agent-browser
+- [ ] 开跑前 / 每 case 前已清理残留 agent-browser（含 `agent-browser close --all`）
 - [ ] run-cases.mjs 包含 logCase 函数（同时写 meta.jsonl + runs.json），未用简化版 writeMeta 替代
 - [ ] 多数 case 为原生录屏且 duration ≥ 4s；回退 case 在日志里标明
 - [ ] 无 `Meta+a` 等易泄漏到系统的快捷键
 - [ ] HTML 可双击打开，侧栏跳转、视频可播；样式来自 `assets/report.css`
-- [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML
+- [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
 - [ ] 报告写明录屏方式（原生为主 / 个别分镜回退）
 
@@ -344,6 +380,9 @@ cp videos/* "$DEST/videos/"
 | 不要 | 要 |
 |------|-----|
 | 残留 Chrome 不清理就开录 | suite / 每 case 前 `pkill` agent-browser 残留 |
+| 信 `✓ Done` 不验点击效果 | 点击前查元素在不在视口内（不在先 `scrollintoview`），点击后截图/查 URL/查 API 验效果 |
+| 视口外的按钮直接 `click @ref` | 先 `scrollintoview @ref` 再点；ref 点击不自动滚动，视口外点击静默落空 |
+| 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |
 | 因一次 ~1s 空壳就放弃原生 | 先清理进程，按成功契约重试；仍短再分镜回退 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
@@ -354,9 +393,15 @@ cp videos/* "$DEST/videos/"
 | 只写 meta.jsonl、跳过 runs.json | 用标准 logCase 同时写两个文件（报告展示「最后跑 / 共跑 N 次」） |
 | FAIL 后人工分析、手动改代码 | 用 Step 5 auto-fix loop 自动修复（最多 3 轮） |
 | 无限制循环修复同一个 case | 连续 2 轮无进展标 BLOCKED，刹车退出 |
+| `click @css-selector` / eval 不加引号就开跑 | 先看 reference.md「最小命令速查」：`@` 只配 ref，eval JS 双引号包裹 |
+| 清理只 `pkill` 不 `close --all` | 先 `agent-browser close --all` 再 pkill，否则 daemon 残留 session 串页到别的项目 |
+| 断言命令连接失败仍按「无变化」判 PASS | 数据拿不到判 BLOCKED/重试，防假阳性 |
 
-## 相关 skill
+## 依赖工具
 
-- `agent-browser` — 浏览器操作
-- `e2e-verify` — 无长视频的 Issue checklist 验收
-- `html-report` — 方案/分析 HTML 与 R2 上传
+- `agent-browser` — 浏览器操作与录屏（公网 npm 包：`npm i -g agent-browser`）
+- `ffmpeg` / `ffprobe` — 视频处理（转码、分镜 concat、poster 提取、时长校验）
+- Node.js 18+ — run-cases / build-report / check-env 脚本
+- `curl` — check-env 探测目标 web 可达性（macOS/Linux 自带）
+
+运行前检查：`node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>`

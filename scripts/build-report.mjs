@@ -17,6 +17,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,6 +58,67 @@ function formatRanAt(iso) {
   }).formatToParts(date);
   const get = (type) => parts.find((p) => p.type === type)?.value || "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
+/** mp4 时长（秒）；ffprobe 不可用/失败返回 null */
+function mediaDuration(file) {
+  const r = spawnSync("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=nw=1:nk=1",
+    file,
+  ], { encoding: "utf8" });
+  if (r.error || r.status !== 0) return null;
+  const n = Number(String(r.stdout).trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 缺 videos/<id>.png 时从 mp4 末帧提取（报告 poster / 结束帧依赖它） */
+function ensurePoster(dir, id) {
+  const videosDir = path.join(dir, "videos");
+  const png = path.join(videosDir, `${id}.png`);
+  if (fs.existsSync(png)) return png;
+  const mp4 = path.join(videosDir, `${id}.mp4`);
+  const webm = path.join(videosDir, `${id}.webm`);
+  const src = fs.existsSync(mp4) ? mp4 : fs.existsSync(webm) ? webm : null;
+  if (!src) return null;
+  const r = spawnSync("ffmpeg", [
+    "-y", "-sseof", "-0.1", "-i", src,
+    "-frames:v", "1", "-update", "1", png,
+  ], { stdio: "ignore" });
+  return r.status === 0 && fs.existsSync(png) ? png : null;
+}
+
+/**
+ * 报告媒体完整性校验（生成后运行）。
+ * 规则：
+ *  - 每个 case 至少要有 mp4 或 png（模板 video/img 引用它们）
+ *  - poster（videos/<id>.png）缺失时自动从末帧补
+ *  - mp4 时长 < minDuration 给 warning（不阻断：分镜回退本来就短）
+ *  - 缺媒体 → error，退出码 1（报告不允许指向不存在的文件）
+ */
+function validateMedia(dir, ids, minDuration) {
+  const errors = [];
+  const warnings = [];
+  for (const id of ids) {
+    const mp4 = path.join(dir, "videos", `${id}.mp4`);
+    const png = path.join(dir, "videos", `${id}.png`);
+    if (!fs.existsSync(mp4) && !fs.existsSync(png)) {
+      errors.push(`videos/${id}.mp4 与 videos/${id}.png 都不存在 → 报告会出现黑块/裂图`);
+      continue;
+    }
+    if (!ensurePoster(dir, id)) {
+      warnings.push(`videos/${id}.png 缺失且无法从末帧提取（poster/结束帧将裂图）`);
+    }
+    if (fs.existsSync(mp4)) {
+      const d = mediaDuration(mp4);
+      if (d === null) warnings.push(`无法用 ffprobe 读取 videos/${id}.mp4 时长`);
+      else if (d < minDuration) warnings.push(`videos/${id}.mp4 时长 ${d.toFixed(1)}s < ${minDuration}s（确认是分镜回退；原生录屏应 ≥${minDuration}s）`);
+    }
+  }
+  for (const w of warnings) console.warn(`[media] warn: ${w}`);
+  for (const e of errors) console.error(`[media] ERROR: ${e}`);
+  if (errors.length > 0) process.exit(1);
 }
 
 function hasFixInfo(row) {
@@ -166,11 +228,25 @@ if (fs.existsSync(runsPath)) {
   }
 }
 
-const rows = fs
+const VALID_STATUS = new Set(["PASS", "FAIL", "BLOCKED"]);
+const rawLines = fs
   .readFileSync(metaPath, "utf8")
   .trim()
   .split("\n")
-  .filter(Boolean)
+  .filter(Boolean);
+const skipped = rawLines.filter((l) => {
+  const [, , status] = l.split("|");
+  return !(l.match(/^\S+\|/) && VALID_STATUS.has(status));
+});
+for (const l of skipped) {
+  console.warn(`[meta] 跳过无法解析的行: ${l.slice(0, 80)}`);
+}
+
+const rows = rawLines
+  .filter((l) => {
+    const [, , status] = l.split("|");
+    return l.match(/^\S+\|/) && VALID_STATUS.has(status);
+  })
   .map((line) => {
     const [id, titleRow, status, notes, lastRanAtField, runCountField] =
       line.split("|");
@@ -273,3 +349,6 @@ const html = fill(shellTpl, {
 const outPath = path.join(dir, "index.html");
 fs.writeFileSync(outPath, html);
 console.log("wrote", outPath);
+
+// 生成后校验媒体引用（缺 poster 自动补；缺 mp4/png 直接报错退出码 1）
+validateMedia(dir, rows.map((r) => r.id), 4);
