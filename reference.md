@@ -1,5 +1,30 @@
 # tple-skill — 参考实现
 
+## agent-browser 最小命令速查（先看这里，别猜）
+
+```bash
+agent-browser open <url>          # 导航
+agent-browser snapshot -i         # a11y 树 + ref（@e1…）；页面一变 ref 即失效，重新 snapshot
+agent-browser fill @e3 "文本"      # 输入（自带清空）；ref 来自上一次 snapshot
+agent-browser click @e4           # 点击 ref（不自动滚动：视口外先 scrollintoview）
+agent-browser wait 1500           # 等待毫秒（录屏中唯一允许的等待方式）
+agent-browser eval "<js>"         # 执行 JS；JS 一律双引号包裹，内部字符串用单引号
+agent-browser get url             # 当前 URL
+agent-browser get text body       # 页面文本（注意：没有裸 `body` 命令）
+agent-browser get count ".item"   # 元素计数
+agent-browser screenshot out.png  # 截图
+agent-browser record start x.webm / record stop
+agent-browser close --all         # 关闭所有 session
+```
+
+三条最贵的教训：
+
+- **`@` 前缀只配 ref（`@e3`），CSS 选择器直接写**：`click button[data-testid="x"]` 可以，`click @button[...]` 必失败。
+- **`eval` 的 JS 必须双引号包裹**：`agent-browser eval "localStorage.setItem('token','x')"`；外层用单引号或不加引号，括号会被 shell 吃掉报 `syntax error near unexpected token '('`。
+- **断言数据拿不到 ≠ 断言通过**：`eval`/`get` 返回连接错误（如 `Failed to connect`）时，判 BLOCKED 或重试，绝不能按「无变化」判 PASS（曾把连接失败误判成「空标题被拦截」的假阳性）。
+
+完整版：`agent-browser skills get core --full`（与 CLI 版本匹配，优先于凭记忆猜命令）。
+
 ## meta.jsonl
 
 每行一条，管道分隔：
@@ -9,6 +34,8 @@
 02-db-validation|数据库 Dialog 必填校验|FAIL|未见校验文案
 07-authgate-retry|AuthGate 连接失败可重试|BLOCKED|找不到 api pid
 ```
+
+**一行一记录是硬约束**：notes 来自命令 stderr 时常带换行，写前必须清洗——换行折叠成空格、`|` 替换、截断到 ~300 字符。否则碎片行混入 meta.jsonl，报告生成与解析全乱。
 
 status 仅用：`PASS` | `FAIL` | `BLOCKED`。
 
@@ -38,10 +65,13 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`。
 ## 清理残留进程（录屏前必做）
 
 ```bash
+agent-browser close --all 2>/dev/null || true   # 先关 daemon 持有的 session
 pkill -f 'agent-browser-darwin-arm64' 2>/dev/null || true
 pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
 sleep 1.5
 ```
+
+**必须先 `close --all` 再 pkill**：daemon 可能残留指向别的项目页面的 session（实测曾串到 localhost:5173 的其他 dev server，造成整轮假 FAIL）。只 pkill 进程不关 session 不够。
 
 不清理时常见症状：`record stop` ~20s、`duration` ~1.0–1.3s、约 10–15 帧。  
 清理后同脚本可稳定到 6–12s、`stop` ~200ms。
@@ -57,8 +87,15 @@ writeToken + open url 一次       # record 刷新上下文
 actions + agent-browser wait
 wait 1500–2000                   # 结尾停顿
 record stop
-ffprobe duration → ≥4s 采用；否则分镜回退
+ffprobe duration → ≥4s 采用；否则按下方重试；仍短再分镜回退
 ```
+
+**短/空 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
+
+1. `record start` 前页面必须已渲染（open + wait 之后再 start）
+2. webm < 4s 或体积异常小（如 ~20KB）→ **先清理残留进程（见上，含 `close --all`），重试一次原生**
+3. 重试后仍短 → 分镜回退，并在 logCase notes 或日志里标明「分镜回退」
+
 
 ```js
 // 输入：禁止 Meta+a
@@ -173,6 +210,14 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 `cases.json`：`{ "01-login": { "uc", "steps", "expected" } }`。
 
 ---
+
+## 依赖检查（跑套件前）
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>
+```
+
+检查 node ≥18、agent-browser、ffmpeg、ffprobe、目标 web 可达；全 ✓ 退出码 0，缺项退出码 1 并打印安装指引。
 
 ## 校验命令
 
