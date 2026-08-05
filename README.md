@@ -11,6 +11,7 @@
 3. 录屏过短（< 4s）自动回退分镜截图
 4. FAIL case 自动修复（最多 3 轮 analyze → fix → re-test）
 5. 生成自包含 HTML 验收报告（侧栏导航 + 视频 + PASS/FAIL/BLOCKED）
+6. **产品调研模式**：只给网址、无代码——agent 探索站点出 case 草案，确认后逐 case 录屏，产出带视频的调研报告（只读探索，走不通的路径记为发现，不改任何东西）
 
 ## 安装
 
@@ -23,7 +24,7 @@ ln -s ~/Documents/skill/tple-skill ~/.claude/skills/tple-skill
 ln -s ~/Documents/skill/tple-skill ~/.cursor/skills/tple-skill
 ```
 
-装好后在 Claude Code 或 Cursor 里说 `tple` / `TPLE` / `E2E 录屏验收` 即可触发。
+装好后在 Claude Code 或 Cursor 里说 `tple` / `TPLE` / `E2E 录屏验收` 即可触发；产品调研场景说 `调研/研究这个产品` + 给 URL 即进入调研模式。
 
 ## 依赖
 
@@ -35,7 +36,7 @@ ln -s ~/Documents/skill/tple-skill ~/.cursor/skills/tple-skill
 
 ```
 tple-skill/
-├── SKILL.md              # Skill 主文件：7 步工作流定义
+├── SKILL.md              # Skill 主文件：模式判定 + 7 步工作流（验收/调研双模式）
 ├── reference.md          # 实现参考：meta.jsonl、runs.json、分镜回退代码
 ├── design.md             # 视觉规范：色板、布局、DOM 约定
 ├── assets/

@@ -240,7 +240,7 @@ if (fs.existsSync(runsPath)) {
   }
 }
 
-const VALID_STATUS = new Set(["PASS", "FAIL", "BLOCKED"]);
+const VALID_STATUS = new Set(["PASS", "FAIL", "BLOCKED", "OBSERVE"]);
 const rawLines = fs
   .readFileSync(metaPath, "utf8")
   .trim()
@@ -281,6 +281,7 @@ const rows = rawLines
 const pass = rows.filter((r) => r.status === "PASS").length;
 const fail = rows.filter((r) => r.status === "FAIL").length;
 const blocked = rows.filter((r) => r.status === "BLOCKED").length;
+const observe = rows.filter((r) => r.status === "OBSERVE").length;
 const now = new Date().toISOString();
 
 // auto-fix summary: how many cases were fixed, max rounds used
@@ -352,6 +353,8 @@ const html = fill(shellTpl, {
   PASS: String(pass),
   FAIL: String(fail),
   BLOCKED: String(blocked),
+  CHIP_OBSERVE:
+    observe > 0 ? `        <span class="chip observe">OBSERVE ${observe}</span>` : "",
   TOTAL: String(rows.length),
   FIX_SUMMARY: fixSummaryHtml,
   SECTIONS: sections,

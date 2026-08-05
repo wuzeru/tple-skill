@@ -3,8 +3,10 @@ name: tple-skill
 description: >-
   TPLE：按 case 做端到端验收——agent-browser 原生 record 录屏（残留进程需先清理），
   过短则回退分镜截图，再生成按 case 分区的 HTML 验收报告（含视频/截图/PASS|FAIL|BLOCKED）。
+  也支持产品调研模式：只给网址、无代码，探索站点出 case 草案，逐 case 录屏产出调研报告。
   Use when the user asks for tple-skill, TPLE, E2E 录屏验收、按 case HTML 报告、
-  issue 验收录屏、端到端 HTML report with video, or per-case acceptance evidence.
+  issue 验收录屏、端到端 HTML report with video, or per-case acceptance evidence;
+  also for 产品调研、竞品调研、研究/看看这个产品、只给 URL 的调研验收。
 ---
 
 # tple-skill（TPLE）
@@ -12,6 +14,11 @@ description: >-
 把「功能切片 / Issue」做成**可打开的 HTML 验收包**：每个 case 一段视频 + 截图 + 步骤/期望/结果。
 
 定位：不做 checklist + 截图 markdown 式验收，而是交付**带媒体的按 case 验收站**。
+
+两种模式：
+
+- **验收模式**（默认）：有代码、有仓库，按 case 录屏验收，FAIL 走 auto-fix 改代码重测。
+- **调研模式**（产品调研）：只给网址、无代码，agent 探索站点后出 case 草案，逐 case 录屏产出**调研报告**。**禁止修改目标站任何东西**；走不通的路径记为发现/限制，不进 auto-fix。模式判定见 Step 0。
 
 ## 交付物
 
@@ -33,14 +40,37 @@ docs/<slice>-e2e/                 # 或仓库约定目录
 
 ```
 Task Progress:
+- [ ] 0. 模式判定：验收模式（默认）/ 调研模式（见下）
 - [ ] 1. 定 case 清单（有 csv 就筛；没有则按项目总结草案 → 用户确认 → 落盘 csv）
 - [ ] 2. 起环境、确认端口，并清理残留 agent-browser
 - [ ] 3. 写 run-cases（原生 record 为主；过短回退分镜）
 - [ ] 4. 跑全量，写 meta.jsonl，用 ffprobe 验视频时长
-- [ ] 5. auto-fix loop：FAIL case → 分析 → 改代码 → 重测（最多 3 轮）
+- [ ] 5. auto-fix loop：FAIL case → 分析 → 改代码 → 重测（最多 3 轮）【仅验收模式】
 - [ ] 6. build-report → index.html（必须用本 skill 模板）
 - [ ] 7. 分发（直接打开本地报告，或自行托管/上传）
 ```
+
+---
+
+### 0. 模式判定（先判，再走流程）
+
+| 信号 | 模式 |
+|------|------|
+| 有代码仓库 / 本地 dev server / issue 验收需求 | **验收模式**（默认） |
+| 用户意图是「调研 / 研究 / 看看这个产品 / 竞品」+ 只给了 URL（无代码） | **调研模式** |
+| 既没代码也没给 URL | 直接向用户要 URL，不要猜站点 |
+
+**调研模式差异总览**（与验收模式逐项对照）：
+
+| 维度 | 验收模式 | 调研模式 |
+|------|----------|----------|
+| case 来源 | 仓库 csv / Issue / diff 总结 | agent 自主探索站点（open + snapshot 巡检）后总结草案 |
+| 环境 | 本地 dev server | 目标就是公网 URL，无需起服务 |
+| auto-fix | FAIL → 改项目代码重测（Step 5） | **禁止改任何东西**；Step 5 整体跳过，FAIL 记为「调研发现/限制」 |
+| 断言 | 对照 expected 判 PASS/FAIL | 「路径是否可走通、行为是否符合描述」；允许 OBSERVE 观察项 |
+| 交付物 | 验收报告 | 调研报告（同模板）+ 可选「产品亮点/疑点」观察清单 |
+
+调研模式专属流程见各步骤中带【调研模式】标注的段落；未标注的步骤两模式通用。
 
 ---
 
@@ -110,6 +140,17 @@ id,module,title,precondition,steps,expected,priority,status,notes
 
 确认后落盘时：`status` 初始为 `pending`；TPLE 跑完后再回写对应行为 `passed` / `failed`（与仓库用例惯例一致）。`module` 可按页面/能力归类（如 `auth`、`chat`）；缺前置条件则 `precondition` 留空或写「已启动本地环境」。
 
+#### 【调研模式】case 草案 = 探索站点后总结（草案门闩同样不得跳过）
+
+调研模式没有仓库可读，case 来源改为**agent 自主探索目标站点**：
+
+1. **探索巡检**（只读，先于任何录屏）：`open` 目标 URL → 首页 `snapshot -i` + `screenshot` → 顺着导航/主入口逐个看关键落地页（定价、登录、注册、核心功能页）；每页 snapshot 记录结构与入口
+   - 用户给了调研重点（如「重点看注册流程和定价页」）→ 优先覆盖该路径，其余保持基础覆盖
+   - 探索时遵守下方「调研模式行为规范」（只读、节流、点击纪律）
+2. **总结草案**：把探索所见总结成 **5–12 条可点验路径草案**（字段同上表；`uc` 一律 `—`；`priority` 按用户重点排），草案格式与上方一致，发给用户 review
+3. **强制门闩**：用户确认前**禁止**逐 case 录屏、禁止生成最终报告。确认后同样落盘 `docs/user-cases.csv` + `cases.json`，`module` 按页面/能力归类，`precondition` 写「未登录态」或「已用提供凭据登录」
+4. 报告 lede 注明来源：`来源：agent 探索 <URL> 后总结草案，经用户确认`
+
 ---
 
 ### 2. 环境
@@ -119,9 +160,13 @@ id,module,title,precondition,steps,expected,priority,status,notes
 ```bash
 node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>
 # 例如 --url http://localhost:3000；不传 --url 则只查工具不查目标
+# 【调研模式】--url 直接指向目标站点，并加 --mode research
+node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
 检查 node ≥18 / agent-browser / ffmpeg / ffprobe / 目标 web 可达；全部 ✓ 才进入后续步骤。
+
+**【调研模式】预期差异**：不需要本地 dev server；目标是公网 URL。401/403 会标为「可达但受限」——这是正常信号（需登录/反爬），如实带入报告与后续步骤，**不得**当成环境故障去「修」，也不得归因瞎猜。站点不可达时如实报告，不重试轰炸。
 
 **退出码非 0 时：自动安装缺失工具，装完复检，通过才继续：**
 
@@ -216,6 +261,13 @@ agent-browser click @ref        # 或鼠标坐标点击
 
 **连续两次「点击无效果」时，先回到基本事实**（元素在哪、可不可见、点没点上、坐标在不在视口内），不要急着归因到外部系统（风控、反自动化、第三方故障）。从「沉默」里编理论，是最贵的错误。
 
+#### 【调研模式】行为规范（对外站必须遵守）
+
+1. **只读探索**：不提交任何破坏性操作——不真实下单、不删除、不大量注册。表单可以填到「提交前一步」截图；**除非用户明示可提交，否则不点最终提交/购买/删除按钮**。
+2. **登录态**：用户提供账号密码时，用 `fill` 登录并继续；未提供凭据则只走公开路径，并在报告 lede/env 明确标注「未登录态调研」。登录凭据只用于本次调研，不写入报告正文（env 里只写「账号：用户提供」）。
+3. **节流**：同一页面访问一次即可，不刷量、不并发轰炸；尊重目标站负载。探索与录屏的访问节奏以「人能看清」为准。
+4. **点击纪律继续适用**：视口检查、点击后验证对外站更重要——外站点不中更难归因，先回基本事实。
+5. **遇阻如实记录**：验证码 / 付费墙 / 401/403 反爬拦截 → 记 `BLOCKED`，notes 写实际看到的现象（如「出现 hCaptcha 验证码」），不停摆、不瞎猜原因、不尝试绕过反爬。
 
 ---
 
@@ -233,9 +285,15 @@ done
 - 任一视频缺失 / duration≈0 → 修该 case 后重跑，勿只改 HTML
 - AuthGate 类 case 后确认 API 未停在 `STOP`
 
+**status 状态集**：验收模式用 `PASS | FAIL | BLOCKED`；调研模式另允许 `OBSERVE`（观察项：不是对错判定，是产品亮点/疑点记录，如「定价页未展示退款政策」）。`meta.jsonl` 写入规则不变（一行一记录，notes 清洗），见 [reference.md](reference.md)。
+
+**【调研模式】FAIL 语义不同**：FAIL = 「这条路径走不通」，是调研发现（如「注册需邮箱验证无法继续」），不是要修的 bug。
+
 ---
 
-### 5. auto-fix loop（全自动修复 FAIL case）
+### 5. auto-fix loop（全自动修复 FAIL case）【仅验收模式】
+
+**调研模式跳过本步骤**：没有项目代码可改，也禁止改目标站任何东西。FAIL case 保留原状态与 notes，直接进 Step 6 生成调研报告；「走不通的原因」本身就是调研产出。
 
 跑完 Step 4 后，如果 `meta.jsonl` 中存在 `FAIL` 状态的 case，进入自动修复循环。
 
@@ -341,6 +399,21 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 
 也可把 `scripts/build-report.mjs` 拷进报告目录再跑；**不得改 CSS token / 布局骨架**。只填文案占位（brand、lede、env、cases）。
 
+**【调研模式】品牌与文案**：brand 用可区分的前缀，如 `--brand "产品调研 · example.com"`；lede 写明来源 URL 与调研范围，未登录时注明：
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
+  --dir docs/research-example.com \
+  --brand "产品调研 · example.com" \
+  --title "example.com 产品调研报告" \
+  --h1 "example.com 产品调研" \
+  --lede "来源：https://example.com · 覆盖注册流程与定价页 · 未登录态调研" \
+  --env "目标 example.com · 未登录态 · 账号：无" \
+  --cases docs/research-example.com/cases.json
+```
+
+case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OBSERVE` 状态，报告 chip 会单列。
+
 #### Design 硬约束（与当前验收 HTML 一致）
 
 - **布局**：`shell` = 左侧 sticky 导航 280px + 右侧 main；`<960px` 单列
@@ -349,7 +422,7 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 - **字体**：IBM Plex Sans + Noto/PingFang；备注用 mono + `.notes` 浅底块
 - **背景**：双径向暖灰渐变叠在 stone 底上（见 CSS），不要改成紫渐变 / 纯白扁平 / 深色主题
 - **媒体**：`video` 黑底、`aspect-ratio 16/10`、`object-fit: contain`；截图两列 grid
-- **状态**：nav `.dot`、chip、badge 三处状态色必须同步（class：`pass|fail|blocked`）
+- **状态**：nav `.dot`、chip、badge 三处状态色必须同步（class：`pass|fail|blocked`；调研模式另有 `observe`）
 - **自包含**：CSS **内联进** `index.html`（`file://` 可开）；视频相对路径 `videos/...`
 
 详细 token 与 DOM 约定见 [design.md](design.md)。
@@ -358,7 +431,7 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 
 ### 7. 分发
 
-报告目录 `docs/<slice>-e2e/` 是自包含的（CSS 内联、视频相对路径），直接本地打开 `index.html` 即可验收。
+报告目录 `docs/<slice>-e2e/` 是自包含的（CSS 内联、视频相对路径），直接本地打开 `index.html` 即可验收。【调研模式】报告目录建议用 `docs/research-<域名>/`，与验收报告区分。
 
 如需分享：把整个目录（含 `videos/`）压缩或上传到任意静态托管。注意保持 `videos/` 相对路径不变；若托管端需要绝对路径，需自行调整 HTML 中的引用。
 
@@ -374,6 +447,10 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 - [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
 - [ ] 报告写明录屏方式（原生为主 / 个别分镜回退）
+- [ ] 【调研模式】全程无破坏性写操作（表单停在提交前一步，未提交/下单/删除）
+- [ ] 【调研模式】无凭据时报告明确标注未登录态；有凭据时凭据未写入报告正文
+- [ ] 【调研模式】验证码/付费墙/反爬记 BLOCKED 并如实记录现象，未尝试绕过
+- [ ] 【调研模式】未进入 Step 5 auto-fix，未修改任何目标站/本地项目内容
 
 ## 反模式
 
@@ -396,6 +473,11 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 | `click @css-selector` / eval 不加引号就开跑 | 先看 reference.md「最小命令速查」：`@` 只配 ref，eval JS 双引号包裹 |
 | 清理只 `pkill` 不 `close --all` | 先 `agent-browser close --all` 再 pkill，否则 daemon 残留 session 串页到别的项目 |
 | 断言命令连接失败仍按「无变化」判 PASS | 数据拿不到判 BLOCKED/重试，防假阳性 |
+| 【调研】在目标站真实下单/删除/批量注册 | 只读探索；表单填到提交前一步截图，用户明示才可提交 |
+| 【调研】走不通就进 auto-fix「修复」 | 调研模式跳过 Step 5；FAIL 是调研发现，notes 记原因即可 |
+| 【调研】遇 401/403/验证码就猜「风控针对我们」 | 如实记 BLOCKED + 实际现象；不绕过反爬，不重试轰炸 |
+| 【调研】没凭据也硬走登录路径 | 无凭据只走公开路径，报告标注未登录态 |
+| 【调研】把用户凭据写进报告正文 | env 只写「账号：用户提供」，凭据不落报告 |
 
 ## 依赖工具
 

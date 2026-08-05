@@ -37,7 +37,13 @@ agent-browser close --all         # 关闭所有 session
 
 **一行一记录是硬约束**：notes 来自命令 stderr 时常带换行，写前必须清洗——换行折叠成空格、`|` 替换、截断到 ~300 字符。否则碎片行混入 meta.jsonl，报告生成与解析全乱。
 
-status 仅用：`PASS` | `FAIL` | `BLOCKED`。
+status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，见下「调研模式」章节）。
+
+调研模式 OBSERVE 示例（观察项，不是对错判定）：
+
+```
+05-pricing|定价页信息完整度|OBSERVE|亮点：三档定价对比清晰；疑点：未展示退款政策
+```
 
 可选第 5、6 列：`lastRanAt|runCount`（优先仍读旁边的 `runs.json`）。
 
@@ -215,9 +221,11 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 
 ```bash
 node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>
+# 调研模式：--url 直接指向公网目标，加 --mode research
+node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
-检查 node ≥18、agent-browser、ffmpeg、ffprobe、目标 web 可达；全 ✓ 退出码 0，缺项退出码 1 并打印安装指引。
+检查 node ≥18、agent-browser、ffmpeg、ffprobe、目标 web 可达；全 ✓ 退出码 0，缺项退出码 1 并打印安装指引。`--mode research` 时 401/403 视为「可达但受限」（需登录/反爬），不当环境故障。
 
 ## 校验命令
 
@@ -342,6 +350,50 @@ while (failedIds.length > 0 && round < MAX_ROUNDS) {
 ```
 
 ---
+
+## 调研模式（只给 URL、无代码）
+
+与验收模式共用同一套 run-cases / logCase / build-report 管道，差异集中在「case 来源、状态语义、无 auto-fix」：
+
+### 探索巡检（case 草案之前，只读）
+
+```bash
+agent-browser open https://example.com
+agent-browser snapshot -i        # 首页结构 + 入口 ref
+agent-browser screenshot explore-home.png
+agent-browser open https://example.com/pricing
+agent-browser snapshot -i        # 逐关键落地页重复；每页访问一次即可（节流）
+```
+
+- 探索产出只用于总结 5–12 条草案；**用户确认前不录屏、不出报告**（门闩与验收模式一致）
+- 用户给了调研重点 → 优先覆盖；其余保持基础覆盖
+- 表单只填到提交前一步截图；真实提交/下单/删除需用户明示
+- 401/403/验证码/付费墙 → 记 `BLOCKED` + 实际现象（不瞎猜、不绕反爬）
+
+### status 语义对照
+
+| 状态 | 验收模式 | 调研模式 |
+|------|----------|----------|
+| `PASS` | 期望达成 | 路径可走通、行为符合描述 |
+| `FAIL` | bug，进 auto-fix | 调研发现：该路径走不通（notes 记原因），**不进 auto-fix** |
+| `BLOCKED` | 环境拿不到证据 | 需人工/凭据/付费/反爬 |
+| `OBSERVE` | —（不用） | 观察项：产品亮点/疑点，非对错判定 |
+
+### 报告命令示例
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
+  --dir docs/research-example.com \
+  --brand "产品调研 · example.com" \
+  --title "example.com 产品调研报告" \
+  --h1 "example.com 产品调研" \
+  --lede "来源：https://example.com · 覆盖注册流程与定价页 · 未登录态调研" \
+  --env "目标 example.com · 未登录态" \
+  --recording "录屏方式：agent-browser 原生 record（调研模式，只读探索）；过短回退分镜。" \
+  --cases docs/research-example.com/cases.json
+```
+
+有 `OBSERVE` case 时报告自动追加 `OBSERVE N` chip（nav `.dot` / badge 同步青色系 `--observe`）。凭据不落报告正文：env 只写「账号：用户提供」。
 
 ## 与 Issue #27 实例对照
 
