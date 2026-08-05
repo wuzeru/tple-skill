@@ -97,23 +97,35 @@ function ensurePoster(dir, id) {
  *  - mp4 时长 < minDuration 给 warning（不阻断：分镜回退本来就短）
  *  - 缺媒体 → error，退出码 1（报告不允许指向不存在的文件）
  */
+/**
+ * 报告媒体完整性校验（生成后运行）。
+ * 规则：
+ *  - 每个 case 至少要有 mp4 / webm / png 之一（模板 video/img 引用它们）
+ *  - poster（videos/<id>.png）缺失时自动从末帧补
+ *  - 视频时长 < minDuration 给 warning（不阻断：分镜回退本来就短）
+ *  - 缺媒体 → error，退出码 1（报告不允许指向不存在的文件）
+ */
 function validateMedia(dir, ids, minDuration) {
   const errors = [];
   const warnings = [];
   for (const id of ids) {
     const mp4 = path.join(dir, "videos", `${id}.mp4`);
+    const webm = path.join(dir, "videos", `${id}.webm`);
     const png = path.join(dir, "videos", `${id}.png`);
-    if (!fs.existsSync(mp4) && !fs.existsSync(png)) {
-      errors.push(`videos/${id}.mp4 与 videos/${id}.png 都不存在 → 报告会出现黑块/裂图`);
+    if (!fs.existsSync(mp4) && !fs.existsSync(webm) && !fs.existsSync(png)) {
+      errors.push(`videos/${id}.mp4 / .webm / .png 都不存在 → 报告会出现黑块/裂图`);
       continue;
     }
     if (!ensurePoster(dir, id)) {
       warnings.push(`videos/${id}.png 缺失且无法从末帧提取（poster/结束帧将裂图）`);
     }
-    if (fs.existsSync(mp4)) {
-      const d = mediaDuration(mp4);
-      if (d === null) warnings.push(`无法用 ffprobe 读取 videos/${id}.mp4 时长`);
-      else if (d < minDuration) warnings.push(`videos/${id}.mp4 时长 ${d.toFixed(1)}s < ${minDuration}s（确认是分镜回退；原生录屏应 ≥${minDuration}s）`);
+    // 对实际存在的视频文件（mp4 优先，其次 webm）做时长检测
+    const vid = fs.existsSync(mp4) ? mp4 : fs.existsSync(webm) ? webm : null;
+    if (vid) {
+      const d = mediaDuration(vid);
+      const rel = path.relative(dir, vid);
+      if (d === null) warnings.push(`无法用 ffprobe 读取 ${rel} 时长`);
+      else if (d < minDuration) warnings.push(`${rel} 时长 ${d.toFixed(1)}s < ${minDuration}s（确认是分镜回退；原生录屏应 ≥${minDuration}s）`);
     }
   }
   for (const w of warnings) console.warn(`[media] warn: ${w}`);
@@ -234,22 +246,21 @@ const rawLines = fs
   .trim()
   .split("\n")
   .filter(Boolean);
-const skipped = rawLines.filter((l) => {
-  const [, , status] = l.split("|");
-  return !(l.match(/^\S+\|/) && VALID_STATUS.has(status));
-});
+const parseStatus = (l) => l.replace(/\r$/, "").split("|")[2];
+const isValidRow = (l) =>
+  Boolean(l.match(/^\S+\|/)) && VALID_STATUS.has(parseStatus(l));
+
+const skipped = rawLines.filter((l) => !isValidRow(l));
 for (const l of skipped) {
   console.warn(`[meta] 跳过无法解析的行: ${l.slice(0, 80)}`);
 }
 
 const rows = rawLines
-  .filter((l) => {
-    const [, , status] = l.split("|");
-    return l.match(/^\S+\|/) && VALID_STATUS.has(status);
-  })
+  .filter(isValidRow)
   .map((line) => {
-    const [id, titleRow, status, notes, lastRanAtField, runCountField] =
-      line.split("|");
+    const [id, titleRow, status, notes, lastRanAtField, runCountField] = line
+      .replace(/\r$/, "")
+      .split("|");
     const fromRuns = runStats[id] || {};
     const lastRanAt = fromRuns.lastRanAt || lastRanAtField || "";
     const runCount = Number(

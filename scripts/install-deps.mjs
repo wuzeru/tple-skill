@@ -5,10 +5,11 @@
  * Usage:
  *   node install-deps.mjs [--dry-run]
  *
- * 逻辑：读 check-env 的缺失清单 → 逐项执行安装指引 → 安装后复检。
+ * 逻辑：自行用 which 探测 agent-browser / ffmpeg / ffprobe 是否缺失（与
+ * check-env 同一判定标准），对缺失项执行安装指引，装完复检。
  *   - agent-browser → npm i -g agent-browser && agent-browser install
- *   - ffmpeg/ffprobe → brew install ffmpeg（无 brew 则提示）
- *   - target 不可达 → 不是缺工具，跳过（提示用户起 dev server）
+ *   - ffmpeg/ffprobe → brew install ffmpeg（一次安装补齐两者；无 brew 则提示）
+ * 不处理 target 可达性（那是 dev server 的事，由 check-env 负责报告）。
  * 退出码：复检全过 0；仍有缺失 1。
  */
 import { spawnSync } from "node:child_process";
@@ -27,6 +28,7 @@ const exists = (bin) => {
 const missing = [];
 if (!exists("agent-browser")) missing.push("agent-browser");
 if (!exists("ffmpeg")) missing.push("ffmpeg");
+if (!exists("ffprobe")) missing.push("ffprobe");
 
 if (missing.length === 0) {
   console.log("无缺失依赖，无需安装。");
@@ -39,12 +41,13 @@ if (missing.includes("agent-browser")) {
   let r = run("npm", ["i", "-g", "agent-browser"]);
   if (r.status === 0) run("agent-browser", ["install"]);
 }
-if (missing.includes("ffmpeg")) {
+// ffmpeg 与 ffprobe 随同一个 brew 包安装，缺任一都触发
+if (missing.includes("ffmpeg") || missing.includes("ffprobe")) {
   if (exists("brew")) {
-    console.log("→ 安装 ffmpeg（brew）");
+    console.log("→ 安装 ffmpeg（brew，一次补齐 ffmpeg + ffprobe）");
     run("brew", ["install", "ffmpeg"], 600000);
   } else {
-    console.log("✗ 未找到 brew，无法自动安装 ffmpeg；请用系统包管理器手动安装");
+    console.log("✗ 未找到 brew，无法自动安装 ffmpeg/ffprobe；请用系统包管理器手动安装");
   }
 }
 
@@ -53,6 +56,7 @@ console.log("\n复检：");
 const still = [];
 if (!exists("agent-browser")) still.push("agent-browser");
 if (!exists("ffmpeg")) still.push("ffmpeg");
+if (!exists("ffprobe")) still.push("ffprobe");
 if (still.length > 0) {
   console.log(`仍缺失: ${still.join(", ")} — 自动安装未成功，请用户介入`);
   process.exit(1);
