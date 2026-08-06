@@ -52,7 +52,12 @@ probe("ffprobe", ["-version"], "随 ffmpeg 一起安装");
 const urlIdx = process.argv.indexOf("--url");
 const targetUrl = urlIdx >= 0 ? process.argv[urlIdx + 1] : "";
 const modeIdx = process.argv.indexOf("--mode");
-const mode = modeIdx >= 0 ? process.argv[modeIdx + 1] : "acceptance";
+const modeRaw = modeIdx >= 0 ? process.argv[modeIdx + 1] : "acceptance";
+const VALID_MODES = new Set(["acceptance", "research"]);
+if (!VALID_MODES.has(modeRaw)) {
+  bad.push({ bin: "mode", hint: `--mode 取值非法：「${modeRaw ?? "(缺值)"}」（应为 acceptance 或 research）；mode 会改变 401/403 的判定语义，不能带错跑` });
+}
+const mode = VALID_MODES.has(modeRaw) ? modeRaw : "acceptance";
 const isResearch = mode === "research";
 if (targetUrl) {
   const r = spawnSync("curl", ["-s", "-o", "/dev/null", "-m", "5", "-w", "%{http_code}", targetUrl], {

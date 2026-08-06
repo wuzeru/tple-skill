@@ -16,8 +16,13 @@ const RUNS = path.join(OUT, "runs.json");
 const MIN_NATIVE_SEC = 4;
 const FRAME_HOLD_SEC = 1.6;
 
-const URL_A = "http://127.0.0.1:4096/L3ByaXZhdGUvdG1wL3RwbGUtcmVjMg==/session/ses_02a8e5405ffe2RnqAVB8nA7vMZ";
-const URL_B = "http://127.0.0.1:4096/L3ByaXZhdGUvdG1wL3RwbGUtb3BlbmNvZGUtd2ViLXRlc3Q=/session/ses_02b58f596ffeonvmpt7yvLqYBD";
+// 会话 URL 从环境变量读取，避免把本地路径/会话 ID 写死在脚本里
+const URL_A = process.env.OPENCODE_URL_A || "";
+const URL_B = process.env.OPENCODE_URL_B || "";
+if (!URL_A || !URL_B) {
+  console.error("缺少 OPENCODE_URL_A / OPENCODE_URL_B 环境变量（opencode web 会话页地址），请设置后重跑");
+  process.exit(1);
+}
 
 fs.mkdirSync(VID, { recursive: true });
 
@@ -114,13 +119,16 @@ function recordCase(id, url, prepare, actions) {
     shot(id, "end");
     ab(["record", "stop"], id);
     const dur = probeDuration(webm);
-    console.log(`  [${id}] attempt ${attempt}: webm ${dur.toFixed(1)}s`);
-    if (dur >= MIN_NATIVE_SEC) {
+    // 0.26.0 契约：空壳 webm 时长可能正常但体积异常小（~15KB 级，无帧），
+    // 验收必须同时看时长与体积，不能只看 duration
+    const size = fs.existsSync(webm) ? fs.statSync(webm).size : 0;
+    console.log(`  [${id}] attempt ${attempt}: webm ${dur.toFixed(1)}s / ${size}B`);
+    if (dur >= MIN_NATIVE_SEC && size >= 50 * 1024) {
       const mp4 = toMp4(webm);
       poster(mp4, id);
       return { ...result, recording: "native", dur };
     }
-    if (attempt === 1) console.log(`  [${id}] 短录屏 → 清理残留重试原生`);
+    if (attempt === 1) console.log(`  [${id}] 短/空壳录屏 → 清理残留重试原生`);
   }
   console.log(`  [${id}] 原生两次仍短 → 分镜回退`);
   const useFrames = frames.length >= 2 ? frames : frames.concat(frames);

@@ -150,13 +150,16 @@ function recordCase(id, url, actions) {
     shot(id, "end");
     ab(["record", "stop"], id);
     const dur = probeDuration(webm);
-    console.log(`  [${id}] attempt ${attempt}: webm ${dur.toFixed(1)}s`);
-    if (dur >= MIN_NATIVE_SEC) {
+    // 0.26.0 契约：空壳 webm 时长可能正常但体积异常小（~15KB 级，无帧），
+    // 验收必须同时看时长与体积，不能只看 duration
+    const size = fs.existsSync(webm) ? fs.statSync(webm).size : 0;
+    console.log(`  [${id}] attempt ${attempt}: webm ${dur.toFixed(1)}s / ${size}B`);
+    if (dur >= MIN_NATIVE_SEC && size >= 50 * 1024) {
       const mp4 = toMp4(webm);
       poster(mp4, id);
       return { ...result, recording: "native", dur };
     }
-    if (attempt === 1) console.log(`  [${id}] 短录屏 → 清理残留重试原生`);
+    if (attempt === 1) console.log(`  [${id}] 短/空壳录屏 → 清理残留重试原生`);
   }
   // 仍短 → 分镜回退（保留 actions 已算出的真实结果）
   console.log(`  [${id}] 原生两次仍短 → 分镜回退`);
