@@ -1,0 +1,57 @@
+# merge 到 main 自动发版：patch+1 打 tag → 打包 zip → 传 R2（latest + 版本归档）→ GitHub Release
+# 需要 repo secrets：CLOUDFLARE_ACCOUNT_ID、CLOUDFLARE_API_TOKEN（R2 写权限）
+name: release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 读完整历史取最新 tag
+
+      - name: Bump version tag (patch+1)
+        id: ver
+        run: |
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          [ -z "$latest" ] && latest=v0.0.0
+          core=${latest#v}
+          major=${core%%.*}; rest=${core#*.}
+          minor=${rest%%.*}; patch=${rest#*.}
+          tag="v$major.$minor.$((patch + 1))"
+          git tag "$tag"
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "released $tag"
+
+      - name: Package zip (root-level layout, matches manual packs)
+        run: |
+          printf '%s\n' "${{ steps.ver.outputs.tag }} $(git rev-parse --short HEAD) $(date -u +%Y-%m-%dT%H:%M:%SZ)" > VERSION
+          zip -r tple-skill.zip README.md SKILL.md reference.md design.md VERSION scripts templates assets -x '*.DS_Store'
+          unzip -l tple-skill.zip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Upload to R2 (latest + versioned archive)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npm i -g wrangler --silent
+          wrangler r2 object put tple-skill-packages/tple-skill.zip --file tple-skill.zip --remote
+          wrangler r2 object put "tple-skill-packages/tple-skill-${{ steps.ver.outputs.tag }}.zip" --file tple-skill.zip --remote
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: tple-skill ${{ steps.ver.outputs.tag }}
+          files: tple-skill.zip
