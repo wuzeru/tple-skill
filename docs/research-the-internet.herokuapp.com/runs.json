@@ -1,0 +1,42 @@
+{
+  "01-home": {
+    "lastRanAt": "2026-08-05T17:49:36.393Z",
+    "runCount": 1
+  },
+  "02-login": {
+    "lastRanAt": "2026-08-05T17:49:57.962Z",
+    "runCount": 1
+  },
+  "03-login-error": {
+    "lastRanAt": "2026-08-05T17:50:20.505Z",
+    "runCount": 1
+  },
+  "04-add-remove": {
+    "lastRanAt": "2026-08-05T17:50:49.262Z",
+    "runCount": 1
+  },
+  "05-checkboxes": {
+    "lastRanAt": "2026-08-05T17:51:12.292Z",
+    "runCount": 1
+  },
+  "06-dropdown": {
+    "lastRanAt": "2026-08-05T17:51:33.453Z",
+    "runCount": 1
+  },
+  "07-dynamic-loading": {
+    "lastRanAt": "2026-08-05T17:51:59.389Z",
+    "runCount": 1
+  },
+  "08-status-codes": {
+    "lastRanAt": "2026-08-05T17:52:32.188Z",
+    "runCount": 1
+  },
+  "09-js-alerts": {
+    "lastRanAt": "2026-08-05T17:52:54.256Z",
+    "runCount": 1
+  },
+  "10-basic-auth": {
+    "lastRanAt": "2026-08-05T17:53:16.503Z",
+    "runCount": 1
+  }
+}

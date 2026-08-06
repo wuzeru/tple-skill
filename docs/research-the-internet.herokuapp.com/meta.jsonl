@@ -1,0 +1,10 @@
+01-home|首页可访问与导航结构|PASS|导航示例链接 44 个（预期 ≥40）；页面标题「The Internet」；首页渲染正常，入口齐全
+02-login|登录路径可走通|PASS|demo 凭据登录成功，进入 Secure Area 且见成功提示；登录路径可走通
+03-login-error|错误凭据的反馈|PASS|错误密码提交后页面明确显示 invalid 错误消息，反馈路径正常
+04-add-remove|增删元素交互|PASS|元素数：初始 0 → 加两次 2 → 删一次 1；增删交互符合预期（ref 点击生效）
+05-checkboxes|复选框状态切换|PASS|状态 "[false,true]" → "[true,false]"；复选框随点击翻转
+06-dropdown|下拉选择|PASS|选中值：Option 1 → 1；Option 2 → 2
+07-dynamic-loading|动态加载等待|PASS|点击 Start 后约 4-5s 加载完成，Hello World! 出现；动态加载路径可走通
+08-status-codes|状态码页行为|PASS|状态码页逐一访问 200:✓ 404:✓ 500:✓；各页如实返回对应状态说明
+09-js-alerts|JS alert 交互|PASS|JS Alert 触发并（自动）接受，结果区显示成功文案
+10-basic-auth|Basic Auth 受限路径|BLOCKED|访问被认证拦截（open 失败：✗ Navigation failed: net::ERR_INVALID_AUTH_CREDENTIALS），页面内容不可得；需凭据，未登录态无法继续（如实记录，不瞎猜）
