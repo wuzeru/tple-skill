@@ -60,11 +60,23 @@ function ab(args, session, timeout = 60000) {
   };
 }
 
+// 跨平台短等待（win32 无 sleep 命令，用 node 自身等）
+function sleepSec(s) {
+  spawnSync(process.execPath, ["-e", `setTimeout(() => {}, ${Math.round(s * 1000)})`]);
+}
+
 function purge() {
   ab(["close", "--all"]);
-  spawnSync("pkill", ["-f", "agent-browser-darwin-arm64"]);
-  spawnSync("pkill", ["-f", "user-data-dir=.*/agent-browser-chrome-"]);
-  spawnSync("sleep", ["1.5"]);
+  if (process.platform === "win32") {
+    // Windows：按命令行特征精确杀 agent-browser 拉起的 chrome.exe，勿伤用户浏览器
+    spawnSync("powershell", ["-NoProfile", "-Command",
+      "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
+      { timeout: 15000 });
+  } else {
+    // macOS / Linux：只杀带 agent-browser-chrome- user-data-dir 特征的进程
+    spawnSync("pkill", ["-f", "user-data-dir=.*/agent-browser-chrome-"]);
+  }
+  sleepSec(1.5);
 }
 
 function findRef(snapshot, label) {

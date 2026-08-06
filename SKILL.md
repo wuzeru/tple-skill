@@ -173,8 +173,8 @@ node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url https://example.com
 ```bash
 node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失清单安装 + 复检
 # 或按 check-env 打印的指引手动装：
-#   agent-browser → npm i -g agent-browser && agent-browser install
-#   ffmpeg/ffprobe → brew install ffmpeg（或系统包管理器）
+#   agent-browser → npm i -g agent-browser && agent-browser install（全平台）
+#   ffmpeg/ffprobe → brew install ffmpeg（macOS/Linux）或 winget install Gyan.FFmpeg（Windows）
 ```
 
 装完**重跑 `check-env`** 确认全部 ✓，再进入后续步骤。安装失败（无网络 / 无权限 / 目标 web 起不来）才停下来向用户如实报告，不要带病继续，也不要假装检查通过。
@@ -182,13 +182,24 @@ node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失
 - 确认 web / api 可访问；多 worktree 时**避开占用端口**，用 env 注入：
   - `WEB_URL` / `API_URL`
 - 破坏性探测（如 `kill -STOP` API）跑完必须 `kill -CONT`
-- **必须清理残留 agent-browser**（勿杀用户日常 Chrome.app）：
+- **必须清理残留 agent-browser**（勿杀用户日常 Chrome）。跨平台（macOS / Linux / Windows 均支持，agent-browser 自带 win32 二进制）：
 
 ```bash
-agent-browser close --all 2>/dev/null || true   # 先关 daemon session，防串页到其他项目
-pkill -f 'agent-browser-darwin-arm64' 2>/dev/null || true
+# 全平台必做：先关 daemon session，防串页到其他项目
+agent-browser close --all 2>/dev/null || true
+```
+
+再按平台清残留 Chrome（只杀带 `agent-browser-chrome-` user-data-dir 特征的进程，勿伤用户浏览器）：
+
+```bash
+# macOS / Linux
 pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
 sleep 1.5
+```
+
+```powershell
+# Windows（PowerShell）：按命令行特征精确杀 agent-browser 的 chrome.exe
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
 ```
 
 套件开始时清一次；**每个 case 开始前再清一次**（上一 case 的 STOP API / 改 viewport 易污染 screencast）。
@@ -458,7 +469,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 
 | 不要 | 要 |
 |------|-----|
-| 残留 Chrome 不清理就开录 | suite / 每 case 前 `pkill` agent-browser 残留 |
+| 残留 Chrome 不清理就开录 | suite / 每 case 前清理 agent-browser 残留（macOS/Linux `pkill`、Windows PowerShell 按特征杀） |
 | 信 `✓ Done` 不验点击效果 | 点击前查元素在不在视口内（不在先 `scrollintoview`），点击后截图/查 URL/查 API 验效果 |
 | 视口外的按钮直接 `click @ref` | 先 `scrollintoview @ref` 再点；ref 点击不自动滚动，视口外点击静默落空 |
 | 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |

@@ -70,16 +70,25 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 ---
 
-## 清理残留进程（录屏前必做）
+## 清理残留进程（录屏前必做，跨平台）
+
+agent-browser 全平台可用（包内自带 darwin / linux / win32 二进制）。清理分两步：先关 session，再按平台杀残留 Chrome（只杀带 `agent-browser-chrome-` user-data-dir 特征的进程，勿伤用户日常浏览器）：
 
 ```bash
+# 全平台
 agent-browser close --all 2>/dev/null || true   # 先关 daemon 持有的 session
-pkill -f 'agent-browser-darwin-arm64' 2>/dev/null || true
+
+# macOS / Linux
 pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
 sleep 1.5
 ```
 
-**必须先 `close --all` 再 pkill**：daemon 可能残留指向别的项目页面的 session（实测曾串到 localhost:5173 的其他 dev server，造成整轮假 FAIL）。只 pkill 进程不关 session 不够。
+```powershell
+# Windows（PowerShell）
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+```
+
+**必须先 `close --all` 再杀进程**：daemon 可能残留指向别的项目页面的 session（实测曾串到 localhost:5173 的其他 dev server，造成整轮假 FAIL）。只杀进程不关 session 不够。
 
 不清理时常见症状：`record stop` ~20s、`duration` ~1.0–1.3s、约 10–15 帧。  
 清理后同脚本可稳定到 6–12s、`stop` ~200ms。

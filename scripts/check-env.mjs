@@ -45,7 +45,7 @@ if (major >= 18) {
 probe("agent-browser", ["--version"], "npm i -g agent-browser && agent-browser install");
 
 // 3+4. ffmpeg / ffprobe
-probe("ffmpeg", ["-version"], "brew install ffmpeg（或系统包管理器）");
+probe("ffmpeg", ["-version"], "brew install ffmpeg / winget install Gyan.FFmpeg / choco install ffmpeg（按系统包管理器）");
 probe("ffprobe", ["-version"], "随 ffmpeg 一起安装");
 
 // 5. 可选：目标 web 可达性（用 curl，macOS/Linux 自带）
