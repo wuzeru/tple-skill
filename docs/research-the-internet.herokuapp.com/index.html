@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>the-internet.herokuapp.com 产品调研报告</title>
+  <style>
+:root {
+  --ink: #1c1917;
+  --muted: #57534e;
+  --line: #e7e5e4;
+  --bg: #f5f5f4;
+  --panel: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --fail: #b91c1c;
+  --fail-bg: #fee2e2;
+  --blocked: #a16207;
+  --blocked-bg: #fef3c7;
+  --observe: #0e7490;
+  --observe-bg: #cffafe;
+  --accent: #9a3412;
+  --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 15px/1.55 var(--font);
+  background:
+    radial-gradient(900px 420px at 0% 0%, #ffedd5 0%, transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, #e7e5e4 0%, transparent 50%),
+    var(--bg);
+}
+.shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+nav {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  padding: 24px 16px 40px; border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.82); backdrop-filter: blur(10px);
+}
+.brand strong { display: block; color: var(--accent); font-size: 18px; }
+.brand span { color: var(--muted); font-size: 12px; }
+.nav-label {
+  margin: 16px 0 8px; font-size: 12px; color: var(--muted);
+}
+.nav-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 10px; margin: 4px 0; border-radius: 10px;
+  color: var(--muted); text-decoration: none; font-size: 13px;
+}
+.nav-item:hover { background: #f5f5f4; color: var(--ink); }
+.nav-item .dot {
+  width: 8px; height: 8px; border-radius: 999px; margin-top: 6px;
+  background: #a8a29e; flex: none;
+}
+.nav-item.pass .dot { background: var(--ok); }
+.nav-item.fail .dot { background: var(--fail); }
+.nav-item.blocked .dot { background: var(--blocked); }
+.nav-item.observe .dot { background: var(--observe); }
+main { padding: 36px 40px 80px; max-width: 1100px; }
+h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.02em; }
+.lede { color: var(--muted); margin: 0 0 20px; }
+.summary {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px;
+}
+.chip {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: #fff; border: 1px solid var(--line);
+}
+.chip.pass { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.chip.fail { background: var(--fail-bg); color: var(--fail); border-color: transparent; }
+.chip.blocked { background: var(--blocked-bg); color: var(--blocked); border-color: transparent; }
+.chip.observe { background: var(--observe-bg); color: var(--observe); border-color: transparent; }
+.case {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 22px; margin: 0 0 18px;
+  box-shadow: 0 1px 0 rgba(28,25,23,.03), 0 12px 28px rgba(28,25,23,.04);
+}
+.case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.eyebrow {
+  margin: 0; color: var(--muted); font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+h2 { margin: 4px 0 0; font-size: 20px; }
+.run-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.badge {
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+}
+.badge.pass { background: var(--ok-bg); color: var(--ok); }
+.badge.fail { background: var(--fail-bg); color: var(--fail); }
+.badge.blocked { background: var(--blocked-bg); color: var(--blocked); }
+.badge.observe { background: var(--observe-bg); color: var(--observe); }
+.grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; margin-top: 16px; }
+h3 {
+  margin: 14px 0 6px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+p { margin: 0; }
+.notes {
+  font-family: var(--mono); font-size: 12px; background: #fafaf9;
+  border-radius: 10px; padding: 10px 12px; border: 1px solid var(--line);
+}
+video {
+  width: 100%; border-radius: 12px; background: #111; border: 1px solid var(--line);
+  aspect-ratio: 16 / 10; object-fit: contain;
+}
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+figure { margin: 0; }
+img { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.shot-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 10px;
+}
+.shot-zoom:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.shot-zoom img { display: block; pointer-events: none; }
+body.lightbox-open { overflow: hidden; }
+.lightbox[hidden] { display: none !important; }
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(28, 25, 23, .72);
+  cursor: zoom-out;
+}
+.lightbox-panel {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: min(1100px, 96vw);
+  max-height: 92vh;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 60px rgba(28, 25, 23, .28);
+}
+.lightbox-panel img {
+  display: block;
+  width: auto;
+  max-width: min(1060px, 92vw);
+  max-height: calc(92vh - 64px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: #fff;
+}
+.lightbox-panel figcaption {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #f5f5f4;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover { background: #e7e5e4; }
+.fix-log {
+  margin-top: 14px; padding: 12px 14px;
+  background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;
+}
+.fix-log > h3 { margin: 0 0 10px; color: var(--accent); }
+.fix-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.fix-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.fix-item.bug { border-color: #fecaca; }
+.fix-item.fix { border-color: #bbf7d0; }
+.fix-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fix-item.bug .fix-label { color: var(--fail); }
+.fix-item.fix .fix-label { color: var(--ok); }
+.fix-item p { margin: 0; font-size: 13px; line-height: 1.5; }
+.fix-rounds-title { margin: 12px 0 6px; }
+.fix-rounds { margin: 0; padding-left: 1.2rem; font-size: 13px; }
+.fix-rounds li { margin: 8px 0; }
+.fix-kv { display: grid; grid-template-columns: 2.5rem 1fr; gap: 6px; margin-top: 4px; }
+.fix-k { color: var(--muted); font-size: 12px; font-weight: 600; }
+.fix-files { margin-top: 4px; }
+.fix-log code { font-family: var(--mono); font-size: 0.85em; color: var(--muted); }
+.fix-round { font-weight: 600; color: var(--accent); }
+.fix-summary {
+  margin: 14px 0 28px; padding: 10px 14px;
+  background: var(--ok-bg); color: var(--ok); border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+}
+.fix-summary.partial { background: var(--blocked-bg); color: var(--blocked); }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+@media (max-width: 960px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; }
+  .grid, .shots, .fix-pair { grid-template-columns: 1fr; }
+  main { padding: 24px 16px 60px; }
+}
+
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <div class="brand">
+        <strong>产品调研 · the-internet.herokuapp.com</strong>
+        <span>调研模式（只读探索）</span>
+      </div>
+      <div class="nav-label">CASES</div>
+<a href="#01-home" class="nav-item pass"><span class="dot"></span>01-home · 首页可访问与导航结构</a>
+<a href="#02-login" class="nav-item pass"><span class="dot"></span>02-login · 登录路径可走通</a>
+<a href="#03-login-error" class="nav-item pass"><span class="dot"></span>03-login-error · 错误凭据的反馈</a>
+<a href="#04-add-remove" class="nav-item pass"><span class="dot"></span>04-add-remove · 增删元素交互</a>
+<a href="#05-checkboxes" class="nav-item pass"><span class="dot"></span>05-checkboxes · 复选框状态切换</a>
+<a href="#06-dropdown" class="nav-item pass"><span class="dot"></span>06-dropdown · 下拉选择</a>
+<a href="#07-dynamic-loading" class="nav-item pass"><span class="dot"></span>07-dynamic-loading · 动态加载等待</a>
+<a href="#08-status-codes" class="nav-item pass"><span class="dot"></span>08-status-codes · 状态码页行为</a>
+<a href="#09-js-alerts" class="nav-item pass"><span class="dot"></span>09-js-alerts · JS alert 交互</a>
+<a href="#10-basic-auth" class="nav-item blocked"><span class="dot"></span>10-basic-auth · Basic Auth 受限路径</a>
+    </nav>
+    <main>
+      <h1>the-internet.herokuapp.com 产品调研</h1>
+      <p class="lede">来源：https://the-internet.herokuapp.com · 覆盖首页导航、登录、表单交互、动态加载、状态码与受限路径共 10 条可点验路径 · 未提供凭据，登录 case 使用站点页面公开展示的 demo 凭据 · 草案经用户确认</p>
+      <p class="meta">生成时间 2026-08-05T17:53:55.925Z · 目标 the-internet.herokuapp.com（UI 测试沙盒站）· 无用户凭据 · 全程只读探索（无下单/删除/注册）</p>
+      <p class="meta">录屏方式：agent-browser 原生 record 为主（9/10，开跑前/每 case 前清理残留）；01-home 分镜回退已标明。调研模式无 auto-fix，BLOCKED 为受限路径的如实记录。</p>
+      <div class="summary">
+        <span class="chip pass">PASS 9</span>
+        <span class="chip fail">FAIL 0</span>
+        <span class="chip blocked">BLOCKED 1</span>
+
+        <span class="chip">合计 10</span>
+      </div>
+
+<section class="case" id="01-home">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 01-home</p>
+      <h2>首页可访问与导航结构</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:49 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>open https://the-internet.herokuapp.com 首页；检查标题与示例链接列表</p>
+      <h3>期望</h3>
+      <p>页面正常渲染，40+ 示例入口可见可点</p>
+      <h3>结果备注</h3>
+      <p class="notes">导航示例链接 44 个（预期 ≥40）；页面标题「The Internet」；首页渲染正常，入口齐全</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/01-home.png">
+        <source src="videos/01-home.mp4" type="video/mp4" />
+        <source src="videos/01-home.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/01-home.png" data-caption="结束帧 · 01-home" aria-label="放大结束帧">
+            <img src="videos/01-home.png" alt="01-home screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="02-login">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 02-login</p>
+      <h2>登录路径可走通</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:49 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /login；填写页内公开 demo 凭据（tomsmith / SuperSecretPassword!）；提交</p>
+      <h3>期望</h3>
+      <p>进入 Secure Area，出现成功提示</p>
+      <h3>结果备注</h3>
+      <p class="notes">demo 凭据登录成功，进入 Secure Area 且见成功提示；登录路径可走通</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/02-login.png">
+        <source src="videos/02-login.mp4" type="video/mp4" />
+        <source src="videos/02-login.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/02-login.png" data-caption="结束帧 · 02-login" aria-label="放大结束帧">
+            <img src="videos/02-login.png" alt="02-login screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="03-login-error">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 03-login-error</p>
+      <h2>错误凭据的反馈</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:50 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /login；用户名正确、密码填错；提交</p>
+      <h3>期望</h3>
+      <p>页面显示错误消息而非崩溃/静默</p>
+      <h3>结果备注</h3>
+      <p class="notes">错误密码提交后页面明确显示 invalid 错误消息，反馈路径正常</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/03-login-error.png">
+        <source src="videos/03-login-error.mp4" type="video/mp4" />
+        <source src="videos/03-login-error.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/03-login-error.png" data-caption="结束帧 · 03-login-error" aria-label="放大结束帧">
+            <img src="videos/03-login-error.png" alt="03-login-error screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="04-add-remove">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 04-add-remove</p>
+      <h2>增删元素交互</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:50 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /add_remove_elements；点击 Add Element 两次；逐个点击 Delete</p>
+      <h3>期望</h3>
+      <p>元素随点击增减，数量可验证</p>
+      <h3>结果备注</h3>
+      <p class="notes">元素数：初始 0 → 加两次 2 → 删一次 1；增删交互符合预期（ref 点击生效）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/04-add-remove.png">
+        <source src="videos/04-add-remove.mp4" type="video/mp4" />
+        <source src="videos/04-add-remove.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/04-add-remove.png" data-caption="结束帧 · 04-add-remove" aria-label="放大结束帧">
+            <img src="videos/04-add-remove.png" alt="04-add-remove screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="05-checkboxes">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 05-checkboxes</p>
+      <h2>复选框状态切换</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:51 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /checkboxes；勾选/取消两个复选框</p>
+      <h3>期望</h3>
+      <p>复选框状态随点击翻转</p>
+      <h3>结果备注</h3>
+      <p class="notes">状态 &quot;[false,true]&quot; → &quot;[true,false]&quot;；复选框随点击翻转</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/05-checkboxes.png">
+        <source src="videos/05-checkboxes.mp4" type="video/mp4" />
+        <source src="videos/05-checkboxes.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/05-checkboxes.png" data-caption="结束帧 · 05-checkboxes" aria-label="放大结束帧">
+            <img src="videos/05-checkboxes.png" alt="05-checkboxes screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="06-dropdown">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 06-dropdown</p>
+      <h2>下拉选择</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:51 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /dropdown；依次选择 Option 1、Option 2</p>
+      <h3>期望</h3>
+      <p>选中项随操作变化</p>
+      <h3>结果备注</h3>
+      <p class="notes">选中值：Option 1 → 1；Option 2 → 2</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/06-dropdown.png">
+        <source src="videos/06-dropdown.mp4" type="video/mp4" />
+        <source src="videos/06-dropdown.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/06-dropdown.png" data-caption="结束帧 · 06-dropdown" aria-label="放大结束帧">
+            <img src="videos/06-dropdown.png" alt="06-dropdown screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="07-dynamic-loading">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 07-dynamic-loading</p>
+      <h2>动态加载等待</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:51 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /dynamic_loading/1；点击 Start；等待加载完成</p>
+      <h3>期望</h3>
+      <p>加载结束后出现 Hello World!</p>
+      <h3>结果备注</h3>
+      <p class="notes">点击 Start 后约 4-5s 加载完成，Hello World! 出现；动态加载路径可走通</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/07-dynamic-loading.png">
+        <source src="videos/07-dynamic-loading.mp4" type="video/mp4" />
+        <source src="videos/07-dynamic-loading.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/07-dynamic-loading.png" data-caption="结束帧 · 07-dynamic-loading" aria-label="放大结束帧">
+            <img src="videos/07-dynamic-loading.png" alt="07-dynamic-loading screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="08-status-codes">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 08-status-codes</p>
+      <h2>状态码页行为</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:52 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /status_codes；依次点击 200 / 404 / 500 链接并查看结果</p>
+      <h3>期望</h3>
+      <p>各状态码页如实返回对应状态说明</p>
+      <h3>结果备注</h3>
+      <p class="notes">状态码页逐一访问 200:✓ 404:✓ 500:✓；各页如实返回对应状态说明</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/08-status-codes.png">
+        <source src="videos/08-status-codes.mp4" type="video/mp4" />
+        <source src="videos/08-status-codes.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/08-status-codes.png" data-caption="结束帧 · 08-status-codes" aria-label="放大结束帧">
+            <img src="videos/08-status-codes.png" alt="08-status-codes screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="09-js-alerts">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 09-js-alerts</p>
+      <h2>JS alert 交互</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:52 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>进入 /javascript_alerts；点击 Click for JS Alert（alert 自动接受）</p>
+      <h3>期望</h3>
+      <p>结果区显示 You successfully clicked an alert</p>
+      <h3>结果备注</h3>
+      <p class="notes">JS Alert 触发并（自动）接受，结果区显示成功文案</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/09-js-alerts.png">
+        <source src="videos/09-js-alerts.mp4" type="video/mp4" />
+        <source src="videos/09-js-alerts.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/09-js-alerts.png" data-caption="结束帧 · 09-js-alerts" aria-label="放大结束帧">
+            <img src="videos/09-js-alerts.png" alt="09-js-alerts screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="10-basic-auth">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 10-basic-auth</p>
+      <h2>Basic Auth 受限路径</h2>
+      <p class="run-meta">最后跑 2026-08-06 01:53 · 共跑 1 次</p>
+    </div>
+    <span class="badge blocked">BLOCKED</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>无凭据直接访问 /basic_auth</p>
+      <h3>期望</h3>
+      <p>401 受限，记 BLOCKED（受限路径如实记录）</p>
+      <h3>结果备注</h3>
+      <p class="notes">访问被认证拦截（open 失败：✗ Navigation failed: net::ERR_INVALID_AUTH_CREDENTIALS），页面内容不可得；需凭据，未登录态无法继续（如实记录，不瞎猜）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/10-basic-auth.png">
+        <source src="videos/10-basic-auth.mp4" type="video/mp4" />
+        <source src="videos/10-basic-auth.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/10-basic-auth.png" data-caption="结束帧 · 10-basic-auth" aria-label="放大结束帧">
+            <img src="videos/10-basic-auth.png" alt="10-basic-auth screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="lightbox-backdrop" data-lightbox-close aria-label="关闭放大"></button>
+    <figure class="lightbox-panel" role="dialog" aria-modal="true" aria-label="关键帧放大">
+      <button type="button" class="lightbox-close" data-lightbox-close aria-label="关闭">×</button>
+      <img id="lightbox-img" alt="" />
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
+
+  <script>
+    (() => {
+      const box = document.getElementById("lightbox");
+      const img = document.getElementById("lightbox-img");
+      const cap = document.getElementById("lightbox-caption");
+      if (!box || !img) return;
+
+      function openLightbox(src, caption) {
+        img.src = src;
+        img.alt = caption || "";
+        cap.textContent = caption || "";
+        box.hidden = false;
+        document.body.classList.add("lightbox-open");
+      }
+
+      function closeLightbox() {
+        box.hidden = true;
+        img.removeAttribute("src");
+        document.body.classList.remove("lightbox-open");
+      }
+
+      document.addEventListener("click", (event) => {
+        const zoom = event.target.closest(".shot-zoom");
+        if (zoom) {
+          openLightbox(zoom.dataset.full || zoom.querySelector("img")?.src, zoom.dataset.caption || "");
+          return;
+        }
+        if (event.target.closest("[data-lightbox-close]")) closeLightbox();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !box.hidden) closeLightbox();
+      });
+    })();
+  </script>
+</body>
+</html>

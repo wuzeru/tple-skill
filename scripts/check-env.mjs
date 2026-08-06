@@ -12,6 +12,9 @@
  *   4. ffprobe（录后时长校验）
  *   5. --url 给了目标地址时，探测 web 可达性
  *
+ * 可选 --mode research：调研模式。目标为公网 URL，无需本地 dev server；
+ *   401/403 视为「可达但受限」（需登录/反爬，如实报告），不当环境故障。
+ *
  * 全部通过退出码 0；缺依赖退出码 1（打印安装指引）。
  */
 import { spawnSync } from "node:child_process";
@@ -42,12 +45,20 @@ if (major >= 18) {
 probe("agent-browser", ["--version"], "npm i -g agent-browser && agent-browser install");
 
 // 3+4. ffmpeg / ffprobe
-probe("ffmpeg", ["-version"], "brew install ffmpeg（或系统包管理器）");
+probe("ffmpeg", ["-version"], "brew install ffmpeg / winget install Gyan.FFmpeg / choco install ffmpeg（按系统包管理器）");
 probe("ffprobe", ["-version"], "随 ffmpeg 一起安装");
 
 // 5. 可选：目标 web 可达性（用 curl，macOS/Linux 自带）
 const urlIdx = process.argv.indexOf("--url");
 const targetUrl = urlIdx >= 0 ? process.argv[urlIdx + 1] : "";
+const modeIdx = process.argv.indexOf("--mode");
+const modeRaw = modeIdx >= 0 ? process.argv[modeIdx + 1] : "acceptance";
+const VALID_MODES = new Set(["acceptance", "research"]);
+if (!VALID_MODES.has(modeRaw)) {
+  bad.push({ bin: "mode", hint: `--mode 取值非法：「${modeRaw ?? "(缺值)"}」（应为 acceptance 或 research）；mode 会改变 401/403 的判定语义，不能带错跑` });
+}
+const mode = VALID_MODES.has(modeRaw) ? modeRaw : "acceptance";
+const isResearch = mode === "research";
 if (targetUrl) {
   const r = spawnSync("curl", ["-s", "-o", "/dev/null", "-m", "5", "-w", "%{http_code}", targetUrl], {
     encoding: "utf8",
@@ -55,9 +66,17 @@ if (targetUrl) {
   });
   const code = Number(String(r.stdout || "").trim());
   if (!r.error && code >= 200 && code < 500) {
-    ok.push({ bin: "target", info: `${targetUrl} → HTTP ${code}` });
+    if (isResearch && (code === 401 || code === 403)) {
+      // 调研模式：401/403 是正常信号（需登录/反爬），可达但受限，不当故障
+      ok.push({ bin: "target", info: `${targetUrl} → HTTP ${code}（可达但受限：需登录或被反爬拦截，如实记入调研，勿当环境故障）` });
+    } else {
+      ok.push({ bin: "target", info: `${targetUrl} → HTTP ${code}` });
+    }
   } else {
-    bad.push({ bin: "target", hint: `${targetUrl} 不可达（curl 返回 ${code || r.error?.code || "error"}）；先起 dev server 或用 WEB_URL 指到正确地址` });
+    const hint = isResearch
+      ? `${targetUrl} 不可达（curl 返回 ${code || r.error?.code || "error"}）；确认 URL 是否正确、站点是否在线，如实报告，勿重试轰炸`
+      : `${targetUrl} 不可达（curl 返回 ${code || r.error?.code || "error"}）；先起 dev server 或用 WEB_URL 指到正确地址`;
+    bad.push({ bin: "target", hint });
   }
 }
 

@@ -1,0 +1,11 @@
+id,module,title,precondition,steps,expected,priority,status,notes
+01-home,navigation,首页可访问与导航结构,未登录态,open 首页；检查标题与示例链接列表,页面正常渲染且 40+ 示例入口可见可点,P0,pending,
+02-login,auth,登录路径可走通,未登录态（使用站点公开展示的 demo 凭据）,进入 /login；填写页内公开 demo 凭据 tomsmith；提交,进入 Secure Area 并出现成功提示,P0,pending,
+03-login-error,auth,错误凭据的反馈,未登录态,进入 /login；填写错误密码；提交,页面显示错误消息而非崩溃或静默,P0,pending,
+04-add-remove,interaction,增删元素交互,未登录态,进入 /add_remove_elements；Add Element 两次；逐个 Delete,元素随点击增减且数量可验证,P0,pending,
+05-checkboxes,interaction,复选框状态切换,未登录态,进入 /checkboxes；勾选/取消两个复选框,复选框状态随点击翻转,P1,pending,
+06-dropdown,interaction,下拉选择,未登录态,进入 /dropdown；选择 Option 1 与 Option 2,选中项随操作变化,P1,pending,
+07-dynamic-loading,interaction,动态加载等待,未登录态,进入 /dynamic_loading/1；点击 Start；等待加载完成,加载结束后出现 Hello World!,P0,pending,
+08-status-codes,navigation,状态码页行为,未登录态,进入 /status_codes；依次访问 200/404/500 链接,各链接返回对应状态码页面,P1,pending,
+09-js-alerts,interaction,JS alert 交互,未登录态,进入 /javascript_alerts；点击 Click for JS Alert；接受弹窗,结果区显示 You successfully clicked an alert,P1,pending,
+10-basic-auth,auth,Basic Auth 受限路径,未登录态且无凭据,访问 /basic_auth,预期 401 受限并记 BLOCKED 验证受限路径如实记录,P1,pending,

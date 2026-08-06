@@ -1,0 +1,52 @@
+{
+  "01-home": {
+    "uc": "—",
+    "steps": "open https://the-internet.herokuapp.com 首页；检查标题与示例链接列表",
+    "expected": "页面正常渲染，40+ 示例入口可见可点"
+  },
+  "02-login": {
+    "uc": "—",
+    "steps": "进入 /login；填写页内公开 demo 凭据（tomsmith / SuperSecretPassword!）；提交",
+    "expected": "进入 Secure Area，出现成功提示"
+  },
+  "03-login-error": {
+    "uc": "—",
+    "steps": "进入 /login；用户名正确、密码填错；提交",
+    "expected": "页面显示错误消息而非崩溃/静默"
+  },
+  "04-add-remove": {
+    "uc": "—",
+    "steps": "进入 /add_remove_elements；点击 Add Element 两次；逐个点击 Delete",
+    "expected": "元素随点击增减，数量可验证"
+  },
+  "05-checkboxes": {
+    "uc": "—",
+    "steps": "进入 /checkboxes；勾选/取消两个复选框",
+    "expected": "复选框状态随点击翻转"
+  },
+  "06-dropdown": {
+    "uc": "—",
+    "steps": "进入 /dropdown；依次选择 Option 1、Option 2",
+    "expected": "选中项随操作变化"
+  },
+  "07-dynamic-loading": {
+    "uc": "—",
+    "steps": "进入 /dynamic_loading/1；点击 Start；等待加载完成",
+    "expected": "加载结束后出现 Hello World!"
+  },
+  "08-status-codes": {
+    "uc": "—",
+    "steps": "进入 /status_codes；依次点击 200 / 404 / 500 链接并查看结果",
+    "expected": "各状态码页如实返回对应状态说明"
+  },
+  "09-js-alerts": {
+    "uc": "—",
+    "steps": "进入 /javascript_alerts；点击 Click for JS Alert（alert 自动接受）",
+    "expected": "结果区显示 You successfully clicked an alert"
+  },
+  "10-basic-auth": {
+    "uc": "—",
+    "steps": "无凭据直接访问 /basic_auth",
+    "expected": "401 受限，记 BLOCKED（受限路径如实记录）"
+  }
+}

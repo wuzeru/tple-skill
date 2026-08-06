@@ -23,6 +23,7 @@
 | `--ok` / `--ok-bg` | `#15803d` / `#dcfce7` | PASS |
 | `--fail` / `--fail-bg` | `#b91c1c` / `#fee2e2` | FAIL |
 | `--blocked` / `--blocked-bg` | `#a16207` / `#fef3c7` | BLOCKED |
+| `--observe` / `--observe-bg` | `#0e7490` / `#cffafe` | OBSERVE（调研模式观察项） |
 | `--font` | IBM Plex Sans, Noto Sans SC, PingFang SC, system-ui | UI |
 | `--mono` | IBM Plex Mono, ui-monospace | `.notes` |
 
@@ -55,7 +56,7 @@
 </a>
 ```
 
-`pass|fail|blocked` 写在 `.nav-item` 上，驱动 `.dot` 颜色。
+`pass|fail|blocked|observe` 写在 `.nav-item` 上，驱动 `.dot` 颜色（`observe` 仅调研模式用）。
 
 ### Case section
 
@@ -74,6 +75,8 @@
 <span class="chip pass">PASS N</span>
 <span class="chip fail">FAIL N</span>
 <span class="chip blocked">BLOCKED N</span>
+<!-- 调研模式且存在 OBSERVE case 时追加 -->
+<span class="chip observe">OBSERVE N</span>
 <span class="chip">合计 N</span>
 ```
 
