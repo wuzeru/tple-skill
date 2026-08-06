@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>opencode web 执行界面 · agent-browser 录屏</title>
+  <style>
+:root {
+  --ink: #1c1917;
+  --muted: #57534e;
+  --line: #e7e5e4;
+  --bg: #f5f5f4;
+  --panel: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --fail: #b91c1c;
+  --fail-bg: #fee2e2;
+  --blocked: #a16207;
+  --blocked-bg: #fef3c7;
+  --observe: #0e7490;
+  --observe-bg: #cffafe;
+  --accent: #9a3412;
+  --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 15px/1.55 var(--font);
+  background:
+    radial-gradient(900px 420px at 0% 0%, #ffedd5 0%, transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, #e7e5e4 0%, transparent 50%),
+    var(--bg);
+}
+.shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+nav {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  padding: 24px 16px 40px; border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.82); backdrop-filter: blur(10px);
+}
+.brand strong { display: block; color: var(--accent); font-size: 18px; }
+.brand span { color: var(--muted); font-size: 12px; }
+.nav-label {
+  margin: 16px 0 8px; font-size: 12px; color: var(--muted);
+}
+.nav-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 10px; margin: 4px 0; border-radius: 10px;
+  color: var(--muted); text-decoration: none; font-size: 13px;
+}
+.nav-item:hover { background: #f5f5f4; color: var(--ink); }
+.nav-item .dot {
+  width: 8px; height: 8px; border-radius: 999px; margin-top: 6px;
+  background: #a8a29e; flex: none;
+}
+.nav-item.pass .dot { background: var(--ok); }
+.nav-item.fail .dot { background: var(--fail); }
+.nav-item.blocked .dot { background: var(--blocked); }
+.nav-item.observe .dot { background: var(--observe); }
+main { padding: 36px 40px 80px; max-width: 1100px; }
+h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.02em; }
+.lede { color: var(--muted); margin: 0 0 20px; }
+.summary {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px;
+}
+.chip {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: #fff; border: 1px solid var(--line);
+}
+.chip.pass { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.chip.fail { background: var(--fail-bg); color: var(--fail); border-color: transparent; }
+.chip.blocked { background: var(--blocked-bg); color: var(--blocked); border-color: transparent; }
+.chip.observe { background: var(--observe-bg); color: var(--observe); border-color: transparent; }
+.case {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 22px; margin: 0 0 18px;
+  box-shadow: 0 1px 0 rgba(28,25,23,.03), 0 12px 28px rgba(28,25,23,.04);
+}
+.case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.eyebrow {
+  margin: 0; color: var(--muted); font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+h2 { margin: 4px 0 0; font-size: 20px; }
+.run-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.badge {
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+}
+.badge.pass { background: var(--ok-bg); color: var(--ok); }
+.badge.fail { background: var(--fail-bg); color: var(--fail); }
+.badge.blocked { background: var(--blocked-bg); color: var(--blocked); }
+.badge.observe { background: var(--observe-bg); color: var(--observe); }
+.grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; margin-top: 16px; }
+h3 {
+  margin: 14px 0 6px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+p { margin: 0; }
+.notes {
+  font-family: var(--mono); font-size: 12px; background: #fafaf9;
+  border-radius: 10px; padding: 10px 12px; border: 1px solid var(--line);
+}
+video {
+  width: 100%; border-radius: 12px; background: #111; border: 1px solid var(--line);
+  aspect-ratio: 16 / 10; object-fit: contain;
+}
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+figure { margin: 0; }
+img { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.shot-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 10px;
+}
+.shot-zoom:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.shot-zoom img { display: block; pointer-events: none; }
+body.lightbox-open { overflow: hidden; }
+.lightbox[hidden] { display: none !important; }
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(28, 25, 23, .72);
+  cursor: zoom-out;
+}
+.lightbox-panel {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: min(1100px, 96vw);
+  max-height: 92vh;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 60px rgba(28, 25, 23, .28);
+}
+.lightbox-panel img {
+  display: block;
+  width: auto;
+  max-width: min(1060px, 92vw);
+  max-height: calc(92vh - 64px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: #fff;
+}
+.lightbox-panel figcaption {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #f5f5f4;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover { background: #e7e5e4; }
+.fix-log {
+  margin-top: 14px; padding: 12px 14px;
+  background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;
+}
+.fix-log > h3 { margin: 0 0 10px; color: var(--accent); }
+.fix-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.fix-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.fix-item.bug { border-color: #fecaca; }
+.fix-item.fix { border-color: #bbf7d0; }
+.fix-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fix-item.bug .fix-label { color: var(--fail); }
+.fix-item.fix .fix-label { color: var(--ok); }
+.fix-item p { margin: 0; font-size: 13px; line-height: 1.5; }
+.fix-rounds-title { margin: 12px 0 6px; }
+.fix-rounds { margin: 0; padding-left: 1.2rem; font-size: 13px; }
+.fix-rounds li { margin: 8px 0; }
+.fix-kv { display: grid; grid-template-columns: 2.5rem 1fr; gap: 6px; margin-top: 4px; }
+.fix-k { color: var(--muted); font-size: 12px; font-weight: 600; }
+.fix-files { margin-top: 4px; }
+.fix-log code { font-family: var(--mono); font-size: 0.85em; color: var(--muted); }
+.fix-round { font-weight: 600; color: var(--accent); }
+.fix-summary {
+  margin: 14px 0 28px; padding: 10px 14px;
+  background: var(--ok-bg); color: var(--ok); border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+}
+.fix-summary.partial { background: var(--blocked-bg); color: var(--blocked); }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+@media (max-width: 960px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; }
+  .grid, .shots, .fix-pair { grid-template-columns: 1fr; }
+  main { padding: 24px 16px 60px; }
+}
+
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <div class="brand">
+        <strong>agent-browser 录屏 · opencode web</strong>
+        <span>TPLE 原生 record 重录</span>
+      </div>
+      <div class="nav-label">CASES</div>
+<a href="#01-session-a-open" class="nav-item pass"><span class="dot"></span>01-session-a-open · opencode web · 会话页打开与草案</a>
+<a href="#02-session-a-steps" class="nav-item pass"><span class="dot"></span>02-session-a-steps · opencode web · 执行步骤流（工具调用）</a>
+<a href="#03-session-a-final" class="nav-item pass"><span class="dot"></span>03-session-a-final · opencode web · 最终结果 5/5 PASS</a>
+<a href="#04-session-b-tour" class="nav-item pass"><span class="dot"></span>04-session-b-tour · opencode web · 第二个会话（8 case 执行）巡览</a>
+    </nav>
+    <main>
+      <h1>opencode web 执行界面录屏（agent-browser record）</h1>
+      <p class="lede">改用 agent-browser 原生 record（skill 标准录屏方式）重录 opencode web 执行界面：不用 ffmpeg 屏幕录制，无多屏/窗口遮挡问题。4 个 case 覆盖两个真实执行会话（5 case 与 8 case 实时执行）的开头、工具调用流、最终结果。</p>
+      <p class="meta">生成时间 2026-08-06T08:07:45.752Z · 目标 http://127.0.0.1:4096 · agent-browser 0.26.0 · 会话 A=/tmp/tple-rec2 · 会话 B=/tmp/tple-opencode-web-test</p>
+      <p class="meta">录屏方式：agent-browser 原生 record（4/4 全部原生，9.8–12.1s，无分镜回退）；录前 open+wait 就位，录内只 eval 滚动，遵守 0.26.0 成功契约（录中不 open）。</p>
+      <div class="summary">
+        <span class="chip pass">PASS 4</span>
+        <span class="chip fail">FAIL 0</span>
+        <span class="chip blocked">BLOCKED 0</span>
+
+        <span class="chip">合计 4</span>
+      </div>
+
+<section class="case" id="01-session-a-open">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 01-session-a-open</p>
+      <h2>opencode web · 会话页打开与草案</h2>
+      <p class="run-meta">最后跑 2026-08-06 16:00 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>agent-browser 打开会话 A 页面，从顶部缓滚展示执行开头</p>
+      <h3>期望</h3>
+      <p>录到调研 prompt、skill 加载、探索与草案内容</p>
+      <h3>结果备注</h3>
+      <p class="notes">会话页 A（5 case 实时执行会话）从顶部缓滚，展示调研 prompt、Skill tple-skill 加载、探索巡检与 case 草案；核帧确认画面为 opencode web 会话页</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/01-session-a-open.png">
+        <source src="videos/01-session-a-open.mp4" type="video/mp4" />
+        <source src="videos/01-session-a-open.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/01-session-a-open.png" data-caption="结束帧 · 01-session-a-open" aria-label="放大结束帧">
+            <img src="videos/01-session-a-open.png" alt="01-session-a-open screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="02-session-a-steps">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 02-session-a-steps</p>
+      <h2>opencode web · 执行步骤流（工具调用）</h2>
+      <p class="run-meta">最后跑 2026-08-06 16:00 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>从中段缓滚，展示工具调用流</p>
+      <h3>期望</h3>
+      <p>录到 check-env、探索、落盘等 Bash/Write 调用</p>
+      <h3>结果备注</h3>
+      <p class="notes">中段缓滚展示工具调用流：check-env --mode research、agent-browser 探索命令、落盘 user-cases.csv / cases.json / run-cases.mjs（Bash/Write 卡片逐条可见）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/02-session-a-steps.png">
+        <source src="videos/02-session-a-steps.mp4" type="video/mp4" />
+        <source src="videos/02-session-a-steps.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/02-session-a-steps.png" data-caption="结束帧 · 02-session-a-steps" aria-label="放大结束帧">
+            <img src="videos/02-session-a-steps.png" alt="02-session-a-steps screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="03-session-a-final">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 03-session-a-final</p>
+      <h2>opencode web · 最终结果 5/5 PASS</h2>
+      <p class="run-meta">最后跑 2026-08-06 16:01 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>滚动至会话底部</p>
+      <h3>期望</h3>
+      <p>录到最终汇总 5/5 PASS 与报告路径</p>
+      <h3>结果备注</h3>
+      <p class="notes">滚动至会话底部，展示最终汇总「TPLE 调研完成 · 报告路径 · 5/5 PASS」与 case 明细表；核帧确认</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/03-session-a-final.png">
+        <source src="videos/03-session-a-final.mp4" type="video/mp4" />
+        <source src="videos/03-session-a-final.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/03-session-a-final.png" data-caption="结束帧 · 03-session-a-final" aria-label="放大结束帧">
+            <img src="videos/03-session-a-final.png" alt="03-session-a-final screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="04-session-b-tour">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · 04-session-b-tour</p>
+      <h2>opencode web · 第二个会话（8 case 执行）巡览</h2>
+      <p class="run-meta">最后跑 2026-08-06 16:01 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>切换到会话 B（8 case 执行）从头巡览</p>
+      <h3>期望</h3>
+      <p>录到第二个会话的草案、录屏、自愈重跑执行流</p>
+      <h3>结果备注</h3>
+      <p class="notes">切换到会话 B（8 case 实时执行）从头巡览：草案、确认续跑、逐 case 录屏、选择器报错自愈重跑的执行流</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/04-session-b-tour.png">
+        <source src="videos/04-session-b-tour.mp4" type="video/mp4" />
+        <source src="videos/04-session-b-tour.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/04-session-b-tour.png" data-caption="结束帧 · 04-session-b-tour" aria-label="放大结束帧">
+            <img src="videos/04-session-b-tour.png" alt="04-session-b-tour screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="lightbox-backdrop" data-lightbox-close aria-label="关闭放大"></button>
+    <figure class="lightbox-panel" role="dialog" aria-modal="true" aria-label="关键帧放大">
+      <button type="button" class="lightbox-close" data-lightbox-close aria-label="关闭">×</button>
+      <img id="lightbox-img" alt="" />
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
+
+  <script>
+    (() => {
+      const box = document.getElementById("lightbox");
+      const img = document.getElementById("lightbox-img");
+      const cap = document.getElementById("lightbox-caption");
+      if (!box || !img) return;
+
+      function openLightbox(src, caption) {
+        img.src = src;
+        img.alt = caption || "";
+        cap.textContent = caption || "";
+        box.hidden = false;
+        document.body.classList.add("lightbox-open");
+      }
+
+      function closeLightbox() {
+        box.hidden = true;
+        img.removeAttribute("src");
+        document.body.classList.remove("lightbox-open");
+      }
+
+      document.addEventListener("click", (event) => {
+        const zoom = event.target.closest(".shot-zoom");
+        if (zoom) {
+          openLightbox(zoom.dataset.full || zoom.querySelector("img")?.src, zoom.dataset.caption || "");
+          return;
+        }
+        if (event.target.closest("[data-lightbox-close]")) closeLightbox();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !box.hidden) closeLightbox();
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "01-session-a-open": { "uc": "—", "steps": "agent-browser 打开会话 A 页面，从顶部缓滚展示执行开头", "expected": "录到调研 prompt、skill 加载、探索与草案内容" },
+  "02-session-a-steps": { "uc": "—", "steps": "从中段缓滚，展示工具调用流", "expected": "录到 check-env、探索、落盘等 Bash/Write 调用" },
+  "03-session-a-final": { "uc": "—", "steps": "滚动至会话底部", "expected": "录到最终汇总 5/5 PASS 与报告路径" },
+  "04-session-b-tour": { "uc": "—", "steps": "切换到会话 B（8 case 执行）从头巡览", "expected": "录到第二个会话的草案、录屏、自愈重跑执行流" }
+}

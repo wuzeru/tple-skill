@@ -1,0 +1,18 @@
+{
+  "01-session-a-open": {
+    "lastRanAt": "2026-08-06T08:00:29.320Z",
+    "runCount": 1
+  },
+  "02-session-a-steps": {
+    "lastRanAt": "2026-08-06T08:00:50.719Z",
+    "runCount": 1
+  },
+  "03-session-a-final": {
+    "lastRanAt": "2026-08-06T08:01:10.248Z",
+    "runCount": 1
+  },
+  "04-session-b-tour": {
+    "lastRanAt": "2026-08-06T08:01:31.972Z",
+    "runCount": 1
+  }
+}
