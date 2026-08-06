@@ -17,11 +17,13 @@ agent-browser record start x.webm / record stop
 agent-browser close --all         # 关闭所有 session
 ```
 
-三条最贵的教训：
+四条最贵的教训：
 
 - **`@` 前缀只配 ref（`@e3`），CSS 选择器直接写**：`click button[data-testid="x"]` 可以，`click @button[...]` 必失败。
 - **`eval` 的 JS 必须双引号包裹**：`agent-browser eval "localStorage.setItem('token','x')"`；外层用单引号或不加引号，括号会被 shell 吃掉报 `syntax error near unexpected token '('`。
 - **断言数据拿不到 ≠ 断言通过**：`eval`/`get` 返回连接错误（如 `Failed to connect`）时，判 BLOCKED 或重试，绝不能按「无变化」判 PASS（曾把连接失败误判成「空标题被拦截」的假阳性）。
+- **CSS 选择器 click 会在部分页面静默落空**（0.26.0 实测：the-internet 的 add_remove 页，`click "button[onclick=...]"` 返回 `✓ Done` 但 DOM 不变，连 JS `.click()` 都不触发 inline onclick）。优先 snapshot ref 点击；CSS 点击后效果验证不过就改 ref 重试，别先怀疑页面/风控。
+- **录中 `open`（整页导航）会断帧捕获**（0.26.0）：见下方「原生 record 成功契约」。
 
 完整版：`agent-browser skills get core --full`（与 CLI 版本匹配，优先于凭记忆猜命令）。
 
@@ -84,17 +86,19 @@ sleep 1.5
 
 ---
 
-## 原生 record 成功契约
+## 原生 record 成功契约（0.26.0 实测修订）
 
 ```
-ensureLoggedIn / preparePage     # 录外
+ensureLoggedIn / preparePage     # 录外：open + wait，页面完全就位
 record start path.webm
-writeToken + open url 一次       # record 刷新上下文
-actions + agent-browser wait
+writeToken（eval 写 localStorage）# ⚠️ 录中不要 open，会断帧捕获
+actions（点击/填表；页间移动用 click 链接或 back）+ agent-browser wait
 wait 1500–2000                   # 结尾停顿
 record stop
-ffprobe duration → ≥4s 采用；否则按下方重试；仍短再分镜回退
+ffprobe duration → ≥4s 且体积 ≥50KB 采用；否则按下方重试；仍短再分镜回退
 ```
+
+⚠️ **0.26.0 录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本必产出空视频。登录态写回用 `eval`，不用 `open` 刷新。
 
 **短/空 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
 
@@ -158,9 +162,9 @@ function buildSlideshow(name, frames, vidDir) {
 purgeAgentBrowser()
 beginCase(id)          # purge + 新 session
 ensureLoggedIn()       # 录外；缓存 token
-preparePage(url)       # 录外
+preparePage(url)       # 录外：open + wait，页面完全就位
 record start webm
-resume: token + open
+writeToken via eval    # ⚠️ 录中不 open（断帧）；页间移动用 click 链接 / back
 actions() + shot("end") + dwell(2000)
 record stop → ffprobe → native or slideshow
 close + logCase

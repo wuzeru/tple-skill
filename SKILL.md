@@ -203,14 +203,14 @@ sleep 1.5
 
 原生 record **可用**。曾出现「墙钟 30s、`record stop` 卡 ~20s、落盘只有 ~1s」时，根因通常是**残留 agent-browser Chrome 污染**，不是 record 本身不能用。单独 case 在清理后可稳定录到 6–12s。
 
-**成功契约（必须遵守）：**
+**成功契约（agent-browser 0.26.0 实测修订，必须遵守）：**
 
 1. 录前完成登录 / 导航准备（可用 API token + `localStorage`）
-2. `record start <path.webm>`
-3. 写回 token + **一次** `open` 到目标页（`record` 会刷新上下文）
-4. 操作；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
+2. **录前把页面完全就位**：`open <url>` + `wait` 等渲染完成。⚠️ **0.26.0 中录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本**必产出空视频**，不要照做
+3. `record start <path.webm>`
+4. 登录态需写回 token 时用 `eval` 写 localStorage（**不用 `open` 刷新页面**）；操作只做点击/填表，页间移动用**点击链接**（`click @ref`）或 `back`；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
 5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
-6. 立刻 `ffprobe`：duration **≥ 4s** 则转 mp4 采用；**短/空（<4s 或 ~20KB 级别）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退
+6. 立刻 `ffprobe`：duration **≥ 4s** 且**体积正常（≥50KB 级）**则转 mp4 采用；**短/空（<4s 或体积异常小）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退
 
 ```bash
 # 录后验收
@@ -258,6 +258,8 @@ agent-browser click @ref        # 或鼠标坐标点击
 ```
 
 **点击后必须验证效果，不能信 `✓ Done`：** 截图确认状态、或确认 URL/DOM 变化、或查目标 API 是否产生记录。
+
+**已知坑：CSS 选择器 click 会在部分页面静默落空**（0.26.0 实测：the-internet 的 add_remove 页，`click "button[onclick=...]"` 连 JS `.click()` 都不触发 inline onclick，返回 `✓ Done` 但 DOM 不变）。**优先用 snapshot ref 点击**（`snapshot -i` 拿 `@e3` 再 `click @ref`）；CSS 选择器点击后若效果验证不过，改 ref 点击重试，不要先怀疑页面/风控。
 
 **连续两次「点击无效果」时，先回到基本事实**（元素在哪、可不可见、点没点上、坐标在不在视口内），不要急着归因到外部系统（风控、反自动化、第三方故障）。从「沉默」里编理论，是最贵的错误。
 
@@ -461,6 +463,8 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 视口外的按钮直接 `click @ref` | 先 `scrollintoview @ref` 再点；ref 点击不自动滚动，视口外点击静默落空 |
 | 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |
 | 因一次 ~1s 空壳就放弃原生 | 先清理进程，按成功契约重试；仍短再分镜回退 |
+| `record start` 后再 `open` 目标页（0.26.0 断帧捕获，产出空壳 webm） | 录前 open + wait 就位页面再 start；录中只用点击/`back` 移动，token 用 `eval` 写回 |
+| CSS 选择器 `click` 返回 `✓ Done` 就当点上了 | 部分页面会静默落空；点击后验证 DOM/URL 效果，不过就改 snapshot ref 点击重试 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
 | 只在聊天里贴 PASS 表 | 产出可打开的 HTML + videos |
