@@ -72,23 +72,102 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 ## 清理残留进程（录屏前必做，跨平台）
 
-agent-browser 全平台可用（包内自带 darwin / linux / win32 二进制）。清理分两步：先关 session，再按平台杀残留 Chrome（只杀带 `agent-browser-chrome-` user-data-dir 特征的进程，勿伤用户日常浏览器）：
+agent-browser 全平台可用（包内自带 darwin / linux / win32 二进制）。清理分两步：先关 session，再按平台杀残留 Chrome（只杀带 agent-browser user-data-dir 特征的进程，勿伤用户日常浏览器；两类特征都要匹配——`agent-browser-chrome-`，以及 `--profile <名字>` 复制出的 `agent-browser-profile-`）：
 
 ```bash
 # 全平台
 agent-browser close --all 2>/dev/null || true   # 先关 daemon 持有的 session
 
-# macOS / Linux
+# macOS / Linux（两个特征都要杀：--profile 复制出的 profile 目录是 agent-browser-profile-*，
+# 不带 agent-browser-chrome- 前缀，漏杀会残留）
 pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
+pkill -f 'user-data-dir=.*/agent-browser-profile-' 2>/dev/null || true
 sleep 1.5
 ```
 
 ```powershell
-# Windows（PowerShell）
-powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+# Windows（PowerShell）：两类 user-data-dir 特征都按命令行匹配
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' -or $_.CommandLine -like '*agent-browser-profile-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
 ```
 
 **必须先 `close --all` 再杀进程**：daemon 可能残留指向别的项目页面的 session（实测曾串到 localhost:5173 的其他 dev server，造成整轮假 FAIL）。只杀进程不关 session 不够。
+
+---
+
+## 登录态决策（选项 A / B 实现参考）
+
+SKILL.md Step 2.5 的展开：检测到需登录 → 暂停 → 问用户选哪条路。决策伪代码：
+
+```
+if 出现登录墙 / 关键路径 401/403 / case 依赖登录态:
+    停下，把检测信号 + 四个选项（A 复用 profile / B headed 手动登录 / 提供凭据 / 公开路径）发给用户
+    按用户所选执行（调研模式下用户不选且无凭据 → 公开路径 + 标注未登录态）
+```
+
+### 选项 A：复用本地 Chrome profile 登录态
+
+**1) 列出本地 profile 供用户选：**
+
+```bash
+agent-browser profiles            # 人类可读：目录名 (显示名)
+agent-browser profiles --json     # 机器可读；传错名字给 --profile 也会报错列出全部
+```
+
+备用（agent-browser 不可用时读 `Local State`，macOS）：
+
+```bash
+python3 -c "import json,os;d=json.load(open(os.path.expanduser(\"~/Library/Application Support/Google/Chrome/Local State\")))[\"profile\"][\"info_cache\"];[print(k,\"→\",v[\"name\"]) for k,v in d.items()]"
+```
+
+名字解析规则：**目录名精确匹配优先**（如 `Profile 1`），其次**显示名忽略大小写匹配**（如 `working`）；多个显示名撞车会报错要求用目录名。
+
+**2) 用户选定后启动（macOS 关键：必须 `--executable-path` 指向系统真实 Chrome）：**
+
+```bash
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"   # 按平台替换
+agent-browser --session tple --profile "working" --executable-path "$CHROME" open <目标站登录后的页面>
+```
+
+**为什么必须 `--executable-path`（实测，0.26.0 macOS）**：`--profile <名字>` 会把所选 profile **复制到临时目录**（`$TMPDIR/agent-browser-profile-*`）再启动，不占用户正在用的 Chrome 的锁——这部分无需退出 Chrome，机制正确。但 agent-browser 默认启动的是自带的 **Chrome for Testing**：
+
+| 二进制 | macOS Keychain 加密项 |
+|---|---|
+| 真实 Google Chrome | `Chrome Safe Storage` |
+| Chrome for Testing（agent-browser 默认） | `Chromium Safe Storage` |
+
+macOS 上 cookie 值用 Keychain 密钥加密（`v10` 前缀）。真实 Chrome profile 的 cookie 是用 `Chrome Safe Storage` 的密钥封的；Chrome for Testing 拿 `Chromium Safe Storage` 的密钥去解，全部失败、cookie 被静默丢弃——**启动成功、不报错，但登录态全丢**（实测：复制出的 Cookies DB 里有完整的 github `user_session`/`logged_in` 行，浏览器里却读不到；上游已确认为 vercel-labs/agent-browser#1502）。改用系统 Chrome 可执行路径后登录态完整继承（实测 github `user-login` 正确显示）。
+
+**3) 验证登录态再续跑**（别信「应该登录了」）：
+
+```bash
+agent-browser --session tple --profile "working" --executable-path "$CHROME" eval "document.querySelector('meta[name=user-login]')?.content"   # github 例
+# 或查登录态 cookie / 页面用户头像元素 / get url 是否不再重定向到登录页
+```
+
+**4) flag 纪律**：`--profile`（+ `--executable-path`）**每条命令都要带**——daemon 按命令参数决定浏览器启动方式，漏带一条命令就会以无登录态的默认 session 执行。run-cases.mjs 里把它们放进统一的命令构造器。
+
+### 选项 B：headed 引导手动登录
+
+```bash
+PROF="$TMPDIR/tple-manual-login-profile"   # 独立临时目录，勿复用用户真实 Chrome 目录
+mkdir -p "$PROF"
+agent-browser --session tple --headed --profile "$PROF" open <目标站登录页>
+# 提示用户在弹出的窗口里手动完成登录（含 2FA/SSO）；登录完成前轮询等待：
+agent-browser --session tple wait "img[alt*='avatar'], .user-menu"   # 登录成功标志元素；或 get url / cookies get 轮询
+# 验证通过后，后续 case 继续带 --profile "$PROF" 续跑原流程
+```
+
+跨步骤保持：复用该 `--profile "$PROF"` 目录即可；需要导出时用 `state save/load`（**仅限单浏览器/单 profile 场景**，见下对照表）。
+
+### 方案对照表（为什么只推荐 A 的名字模式 + 真实 Chrome）
+
+| 方式 | 行为 | 结论 |
+|---|---|---|
+| `--auto-connect` + `state save` | 连到带 CDP 端口的 Chrome，`Network.getAllCookies` 导出**所有 profile** 的 cookie 混合体 | ❌ 多 profile 场景同站点 cookie 互相覆盖，登录态归属不可控 |
+| `--profile <目录路径>` 直接挂用户 Chrome 目录 | 运行中的 Chrome 独占 profile 锁 | ⚠️ 锁冲突风险 |
+| `--profile <名字>`（默认 Chrome for Testing） | 复制到临时目录启动、无锁冲突，但 cookie 解不开 | ⚠️ 无锁但**登录态静默丢失**（Keychain 密钥不同） |
+| `--profile <名字>` + `--executable-path <系统 Chrome>` | 复制到临时目录 + 用真实 Chrome 启动 | ✅ 推荐：无锁冲突，登录态完整继承（macOS 实测） |
+| 选项 B 临时目录 profile + headed 手动登录 | 与真实 Chrome 无关，同产品加解密一致 | ✅ 推荐：2FA/SSO 场景 |
 
 不清理时常见症状：`record stop` ~20s、`duration` ~1.0–1.3s、约 10–15 帧。  
 清理后同脚本可稳定到 6–12s、`stop` ~200ms。
