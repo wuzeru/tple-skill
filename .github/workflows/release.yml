@@ -31,8 +31,12 @@ jobs:
           major=${core%%.*}; rest=${core#*.}
           minor=${rest%%.*}; patch=${rest#*.}
           tag="v$major.$minor.$((patch + 1))"
-          git tag "$tag"
-          git push origin "$tag"
+          if git ls-remote --tags origin "refs/tags/$tag" | grep -q .; then
+            echo "tag $tag already on remote — likely a rerun, reusing it"
+          else
+            git tag "$tag"
+            git push origin "$tag"
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "released $tag"
 
@@ -44,7 +48,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Upload to R2 (latest + versioned archive)
         env:
