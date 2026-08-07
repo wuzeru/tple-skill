@@ -152,8 +152,14 @@ agent-browser --session tple --profile "working" --executable-path "$CHROME" eva
 PROF="$TMPDIR/tple-manual-login-profile"   # 独立临时目录，勿复用用户真实 Chrome 目录
 mkdir -p "$PROF"
 agent-browser --session tple --headed --profile "$PROF" open <目标站登录页>
-# 提示用户在弹出的窗口里手动完成登录（含 2FA/SSO）；登录完成前轮询等待：
-agent-browser --session tple wait "img[alt*='avatar'], .user-menu"   # 登录成功标志元素；或 get url / cookies get 轮询
+# 提示用户在弹出的窗口里手动完成登录（含 2FA/SSO）；登录完成前轮询等待
+# （轮询用 get count / get url / cookies get，间隔用 wait <ms> 节流；
+#  不要用 wait <selector>——本 skill 约定 wait 只接毫秒数）：
+for i in $(seq 1 60); do
+  n=$(agent-browser --session tple get count "img[alt*='avatar'], .user-menu" 2>/dev/null | tr -d ' ')
+  [ "$n" -gt 0 ] 2>/dev/null && break      # 登录成功标志元素出现；也可轮询 get url 离开登录页 / cookies get 出现会话 cookie
+  agent-browser --session tple wait 2000 >/dev/null 2>&1
+done
 # 验证通过后，后续 case 继续带 --profile "$PROF" 续跑原流程
 ```
 
