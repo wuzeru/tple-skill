@@ -43,6 +43,7 @@ Task Progress:
 - [ ] 0. 模式判定：验收模式（默认）/ 调研模式（见下）
 - [ ] 1. 定 case 清单（有 csv 就筛；没有则按项目总结草案 → 用户确认 → 落盘 csv）
 - [ ] 2. 起环境、确认端口，并清理残留 agent-browser
+- [ ] 2.5 登录态决策：检测到需登录 → 暂停询问用户（复用本地 Chrome profile / headed 手动登录 / 提供凭据 / 公开路径）
 - [ ] 3. 写 run-cases（原生 record 为主；过短回退分镜）
 - [ ] 4. 跑全量，写 meta.jsonl，用 ffprobe 验视频时长
 - [ ] 5. auto-fix loop：FAIL case → 分析 → 改代码 → 重测（最多 3 轮）【仅验收模式】
@@ -189,22 +190,48 @@ node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失
 agent-browser close --all 2>/dev/null || true
 ```
 
-再按平台清残留 Chrome（只杀带 `agent-browser-chrome-` user-data-dir 特征的进程，勿伤用户浏览器）：
+再按平台清残留 Chrome（只杀带 agent-browser user-data-dir 特征的进程，勿伤用户浏览器；`--profile <名字>` 复制出的 profile 目录特征是 `agent-browser-profile-`，两个都要杀）：
 
 ```bash
 # macOS / Linux
 pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
+pkill -f 'user-data-dir=.*/agent-browser-profile-' 2>/dev/null || true
 sleep 1.5
 ```
 
 ```powershell
-# Windows（PowerShell）：按命令行特征精确杀 agent-browser 的 chrome.exe
-powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+# Windows（PowerShell）：按命令行特征精确杀 agent-browser 的 chrome.exe（两类 user-data-dir 特征）
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' -or $_.CommandLine -like '*agent-browser-profile-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
 ```
 
 套件开始时清一次；**每个 case 开始前再清一次**（上一 case 的 STOP API / 改 viewport 易污染 screencast）。
 
 依赖：`agent-browser`、`ffmpeg`、`ffprobe`、Node 18+。
+
+---
+
+### 2.5 登录态决策（检测到需登录时暂停询问，不得静默选路径）
+
+**检测信号**（任一即触发）：打开关键页面出现登录墙 / 被重定向到登录页、关键路径 401/403、case 清单里有依赖登录态的项。
+
+触发后**暂停流程**，向用户说明检测到的信号，并让用户在以下选项中选（不要替用户静默决定）：
+
+| 选项 | 做法 | 适用 |
+|------|------|------|
+| **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出本地 Chrome profile 供用户选择；选定后，**该套件后续所有 agent-browser 命令都带** `--profile "<名字>"` + `--executable-path "<系统 Chrome 可执行路径>"`（macOS 默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`） | 用户本地 Chrome 已登录目标站点（最常见） |
+| **B. headed 引导手动登录** | `--headed --profile <新建临时目录>` 打开登录页，用户手动完成登录（含 2FA/SSO）；轮询验证登录成功后，后续命令继续带 `--profile <该临时目录>` 续跑 | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
+| 提供凭据 | 用户给出账号密码，用 `fill` 登录（凭据不落报告正文，env 只写「账号：用户提供」） | 用户明示愿意提供 |
+| 放弃登录 | 只走公开路径，报告 lede/env 标注「未登录态」 | 用户不想登录或调研模式默认 |
+
+**关键约束：**
+
+- **选项 A 必须带 `--executable-path` 指向系统真实 Chrome**：agent-browser 默认启动 Chrome for Testing，其 macOS Keychain 加密密钥（`Chromium Safe Storage`）与真实 Chrome（`Chrome Safe Storage`）不同，复制过来的 v10 加密 cookie 会**静默解密失败**、登录态全丢。机制与实测证据见 [reference.md](reference.md)「登录态决策」
+- **选项 A/B 的 `--profile` flag 每条命令都要带**（daemon 按命令参数启动浏览器，漏带即回到无登录态的默认 session）
+- 选定登录态后，先在目标站验证登录成功（可观察信号：用户头像元素 / 登录态 cookie / 跳转后的 URL）再进 Step 3；验证不过就回报用户，不带病开跑
+- **不要用 `--auto-connect` + `state save` 导出 cookie 来复用登录态**：那是 browser 级 `Network.getAllCookies`，多 profile 场景会把所有 profile 的 cookie 混在一起，同站点 cookie 互相覆盖，登录态归属不可控（见反模式表）
+- 报告 env 里注明所用登录态，如：`登录态：复用本地 Chrome profile "working"` / `登录态：headed 手动登录` / `未登录态`
+
+【调研模式】同一决策门闩：无凭据且用户不选 A/B 时，维持原行为——只走公开路径，并在报告 lede/env 标注「未登录态调研」。用户选择复用/手动登录后按选项 A/B 执行，登录态同样不落报告正文。
 
 ---
 
@@ -244,7 +271,7 @@ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 videos/02-x
 - **每 case 独立 `--session`**，结束 `close`；case 前 `purge` 残留进程（含 `close --all`）
 - **输入用 `fill @ref text`**（自带清空）；失败再用页面内设 value + `input`/`change` 事件  
   - **禁止** `press Meta+a` / `Cmd+A`：按键可能漏到 macOS 前台（曾误出「关于本机」等系统窗）
-- 登录态：缓存 token；`record start` 后必须写回
+- 登录态：缓存 token；`record start` 后必须写回。若 Step 2.5 选了选项 A/B，该套件**每条命令都要带**对应 `--profile`（选项 A 另带 `--executable-path`）flag，漏带即丢登录态
 - 页面变化后重新 `snapshot -i` 再点 ref
 - 断言：`get text body` / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
 - **断言防假阳性**：命令报连接错误 / 页面为空时，判 BLOCKED 或重试，不能按「数据无变化」判 PASS（曾把 eval 连接失败误判成校验生效）
@@ -453,6 +480,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 ## 质量门槛（完成前自检）
 
 - [ ] 开跑前 / 每 case 前已清理残留 agent-browser（含 `agent-browser close --all`）
+- [ ] 检测到需登录时走了 Step 2.5 决策门闩（未静默选路径）；选项 A 所有命令带 `--profile` + `--executable-path`；选项 B 登录成功已验证后再续跑
 - [ ] run-cases.mjs 包含 logCase 函数（同时写 meta.jsonl + runs.json），未用简化版 writeMeta 替代
 - [ ] 多数 case 为原生录屏且 duration ≥ 4s；回退 case 在日志里标明
 - [ ] 无 `Meta+a` 等易泄漏到系统的快捷键
@@ -488,6 +516,9 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | `click @css-selector` / eval 不加引号就开跑 | 先看 reference.md「最小命令速查」：`@` 只配 ref，eval JS 双引号包裹 |
 | 清理只 `pkill` 不 `close --all` | 先 `agent-browser close --all` 再 pkill，否则 daemon 残留 session 串页到别的项目 |
 | 断言命令连接失败仍按「无变化」判 PASS | 数据拿不到判 BLOCKED/重试，防假阳性 |
+| 检测到登录墙/401/403 仍静默走公开路径或静默猜登录方式 | 停下走 Step 2.5：列选项问用户（复用 profile / headed 手动登录 / 提供凭据 / 公开路径） |
+| 用 `--auto-connect` + `state save` 导 cookie 复用多 profile 登录态 | `Network.getAllCookies` 是 browser 级，混入所有 profile 的 cookie、归属不可控；复用登录态用 `--profile <名字>`（见 reference.md「登录态决策」） |
+| `--profile <名字>` 复用真实 Chrome 登录态但不带 `--executable-path` | Chrome for Testing 的 Keychain 密钥（`Chromium Safe Storage`）与真实 Chrome 不同，v10 cookie 静默解不开、登录态全丢；必须 `--executable-path` 指向系统 Chrome |
 | 【调研】在目标站真实下单/删除/批量注册 | 只读探索；表单填到提交前一步截图，用户明示才可提交 |
 | 【调研】走不通就进 auto-fix「修复」 | 调研模式跳过 Step 5；FAIL 是调研发现，notes 记原因即可 |
 | 【调研】遇 401/403/验证码就猜「风控针对我们」 | 如实记 BLOCKED + 实际现象；不绕过反爬，不重试轰炸 |
