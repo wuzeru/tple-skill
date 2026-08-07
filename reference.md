@@ -72,7 +72,7 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 ## 清理残留进程（录屏前必做，跨平台）
 
-agent-browser 全平台可用（包内自带 darwin / linux / win32 二进制）。清理分两步：先关 session，再按平台杀残留 Chrome（只杀带 `agent-browser-chrome-` user-data-dir 特征的进程，勿伤用户日常浏览器）：
+agent-browser 全平台可用（包内自带 darwin / linux / win32 二进制）。清理分两步：先关 session，再按平台杀残留 Chrome（只杀带 agent-browser user-data-dir 特征的进程，勿伤用户日常浏览器；两类特征都要匹配——`agent-browser-chrome-`，以及 `--profile <名字>` 复制出的 `agent-browser-profile-`）：
 
 ```bash
 # 全平台
