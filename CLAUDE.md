@@ -62,7 +62,7 @@ zip 交付到 R2 私有桶 `tple-skill-packages`（对象 key 固定 `tple-skill
 
 ## Conventions
 
-- 分支流程：main 保护 → 新分支开发 → `gh pr create` → 等 Copilot review（inline 评论逐条处理，`gh api pulls/{n}/comments --paginate` 才算数）→ **合并前必须征得用户明确同意**——agent 不得自行 `gh pr merge`（教训：PR #9 未经确认被擅自合并 main，用户要求后以 revert PR 回滚）。PR 模板见 finish-issue-pr skill
+- 分支流程：main 保护 → 新分支开发 → `gh pr create` → 等 Copilot review（inline 评论逐条处理，`gh api pulls/{n}/comments --paginate` 才算数）→ **合并前必须征得用户明确同意**——agent 不得以任何方式自行合并到 main（`gh pr merge`、GitHub API、直接 push main 都不行；squash 合并本身由用户执行）。教训：PR #9 未经确认被擅自合并 main，用户要求后以 revert PR 回滚。PR 模板见 finish-issue-pr skill
 - **meta.jsonl 一行一记录是硬约束**：notes 写前必须清洗（换行折叠成空格、`|` 替换、截断 ~300 字符）
 - SKILL.md「反模式表」是回归测试的负样本清单，新增已知坑就往里加一行
 - 提交信息中文，说清用户可感知的结果；Co-Authored-By: Claude Fable 5
