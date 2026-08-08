@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>imagefree.net 人机检测门闩专题调研</title>
+  <style>
+:root {
+  --ink: #1c1917;
+  --muted: #57534e;
+  --line: #e7e5e4;
+  --bg: #f5f5f4;
+  --panel: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --fail: #b91c1c;
+  --fail-bg: #fee2e2;
+  --blocked: #a16207;
+  --blocked-bg: #fef3c7;
+  --observe: #0e7490;
+  --observe-bg: #cffafe;
+  --accent: #9a3412;
+  --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 15px/1.55 var(--font);
+  background:
+    radial-gradient(900px 420px at 0% 0%, #ffedd5 0%, transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, #e7e5e4 0%, transparent 50%),
+    var(--bg);
+}
+.shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+nav {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  padding: 24px 16px 40px; border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.82); backdrop-filter: blur(10px);
+}
+.brand strong { display: block; color: var(--accent); font-size: 18px; }
+.brand span { color: var(--muted); font-size: 12px; }
+.nav-label {
+  margin: 16px 0 8px; font-size: 12px; color: var(--muted);
+}
+.nav-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 10px; margin: 4px 0; border-radius: 10px;
+  color: var(--muted); text-decoration: none; font-size: 13px;
+}
+.nav-item:hover { background: #f5f5f4; color: var(--ink); }
+.nav-item .dot {
+  width: 8px; height: 8px; border-radius: 999px; margin-top: 6px;
+  background: #a8a29e; flex: none;
+}
+.nav-item.pass .dot { background: var(--ok); }
+.nav-item.fail .dot { background: var(--fail); }
+.nav-item.blocked .dot { background: var(--blocked); }
+.nav-item.observe .dot { background: var(--observe); }
+main { padding: 36px 40px 80px; max-width: 1100px; }
+h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.02em; }
+.lede { color: var(--muted); margin: 0 0 20px; }
+.summary {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px;
+}
+.chip {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: #fff; border: 1px solid var(--line);
+}
+.chip.pass { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.chip.fail { background: var(--fail-bg); color: var(--fail); border-color: transparent; }
+.chip.blocked { background: var(--blocked-bg); color: var(--blocked); border-color: transparent; }
+.chip.observe { background: var(--observe-bg); color: var(--observe); border-color: transparent; }
+.case {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 22px; margin: 0 0 18px;
+  box-shadow: 0 1px 0 rgba(28,25,23,.03), 0 12px 28px rgba(28,25,23,.04);
+}
+.case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.eyebrow {
+  margin: 0; color: var(--muted); font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+h2 { margin: 4px 0 0; font-size: 20px; }
+.run-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.badge {
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+}
+.badge.pass { background: var(--ok-bg); color: var(--ok); }
+.badge.fail { background: var(--fail-bg); color: var(--fail); }
+.badge.blocked { background: var(--blocked-bg); color: var(--blocked); }
+.badge.observe { background: var(--observe-bg); color: var(--observe); }
+.grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; margin-top: 16px; }
+h3 {
+  margin: 14px 0 6px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+p { margin: 0; }
+.notes {
+  font-family: var(--mono); font-size: 12px; background: #fafaf9;
+  border-radius: 10px; padding: 10px 12px; border: 1px solid var(--line);
+}
+video {
+  width: 100%; border-radius: 12px; background: #111; border: 1px solid var(--line);
+  aspect-ratio: 16 / 10; object-fit: contain;
+}
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+figure { margin: 0; }
+img { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.shot-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 10px;
+}
+.shot-zoom:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.shot-zoom img { display: block; pointer-events: none; }
+body.lightbox-open { overflow: hidden; }
+.lightbox[hidden] { display: none !important; }
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(28, 25, 23, .72);
+  cursor: zoom-out;
+}
+.lightbox-panel {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: min(1100px, 96vw);
+  max-height: 92vh;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 60px rgba(28, 25, 23, .28);
+}
+.lightbox-panel img {
+  display: block;
+  width: auto;
+  max-width: min(1060px, 92vw);
+  max-height: calc(92vh - 64px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: #fff;
+}
+.lightbox-panel figcaption {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #f5f5f4;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover { background: #e7e5e4; }
+.fix-log {
+  margin-top: 14px; padding: 12px 14px;
+  background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;
+}
+.fix-log > h3 { margin: 0 0 10px; color: var(--accent); }
+.fix-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.fix-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.fix-item.bug { border-color: #fecaca; }
+.fix-item.fix { border-color: #bbf7d0; }
+.fix-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fix-item.bug .fix-label { color: var(--fail); }
+.fix-item.fix .fix-label { color: var(--ok); }
+.fix-item p { margin: 0; font-size: 13px; line-height: 1.5; }
+.fix-rounds-title { margin: 12px 0 6px; }
+.fix-rounds { margin: 0; padding-left: 1.2rem; font-size: 13px; }
+.fix-rounds li { margin: 8px 0; }
+.fix-kv { display: grid; grid-template-columns: 2.5rem 1fr; gap: 6px; margin-top: 4px; }
+.fix-k { color: var(--muted); font-size: 12px; font-weight: 600; }
+.fix-files { margin-top: 4px; }
+.fix-log code { font-family: var(--mono); font-size: 0.85em; color: var(--muted); }
+.fix-round { font-weight: 600; color: var(--accent); }
+.fix-summary {
+  margin: 14px 0 28px; padding: 10px 14px;
+  background: var(--ok-bg); color: var(--ok); border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+}
+.fix-summary.partial { background: var(--blocked-bg); color: var(--blocked); }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+@media (max-width: 960px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; }
+  .grid, .shots, .fix-pair { grid-template-columns: 1fr; }
+  main { padding: 24px 16px 60px; }
+}
+
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <div class="brand">
+        <strong>产品调研 · imagefree.net</strong>
+        <span>按 case 录屏验收</span>
+      </div>
+      <div class="nav-label">CASES</div>
+<a href="#if-01-captcha-gate" class="nav-item observe"><span class="dot"></span>if-01-captcha-gate · 人机验证门闩观察</a>
+<a href="#if-02-cdp-wait" class="nav-item pass"><span class="dot"></span>if-02-cdp-wait · 人机检测改用连接真实浏览器（选项 C 预检流程）</a>
+    </nav>
+    <main>
+      <h1>imagefree.net 人机检测专题</h1>
+      <p class="lede">来源：https://imagefree.net · 免登录 AI 生图站。核心发现：宣称「no sign-up」的站点，Generate 按钮实际被 Cloudflare turnstile「请验证您是真人」门闩拦截。专题验证两条路径：门闩现象观察（OBSERVE）与人机检测场景的选项 C 实战——预检权限握手 + connect ws-url 接入用户真实浏览器 + 轮询等待用户手动过验证（PASS：验证+prompt 双满足后按钮解锁）。全程未绕过反爬，表单停在提交前一步。</p>
+      <p class="meta">生成时间 2026-08-08T12:48:09.070Z · 目标 imagefree.net · 未登录态调研 · 登录态：无（站点免登录，但有人机门闩）</p>
+      <p class="meta">录屏方式：if-01 agent-browser 原生 record；if-02 通过 CDP connect 接入真实 Chrome 后原生 record（241s）+ 关键帧留证。</p>
+      <div class="summary">
+        <span class="chip pass">PASS 1</span>
+        <span class="chip fail">FAIL 0</span>
+        <span class="chip blocked">BLOCKED 0</span>
+        <span class="chip observe">OBSERVE 1</span>
+        <span class="chip">合计 2</span>
+      </div>
+
+<section class="case" id="if-01-captcha-gate">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · if-01-captcha-gate</p>
+      <h2>人机验证门闩观察</h2>
+      <p class="run-meta">最后跑 2026-08-08 13:45 · 共跑 1 次</p>
+    </div>
+    <span class="badge observe">OBSERVE</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>open 首页；检查 Generate Free Image 按钮状态与 Cloudflare turnstile 验证框</p>
+      <h3>期望</h3>
+      <p>Generate 被「请验证您是真人」门闩拦截（disabled）；如实记录现象，不尝试绕过</p>
+      <h3>结果备注</h3>
+      <p class="notes">Generate 按钮 disabled，Cloudflare「请验证您是真人」turnstile 在页；门闩未过，未尝试绕过 · 录屏:原生 6.3s/63帧</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/if-01-captcha-gate.png">
+        <source src="videos/if-01-captcha-gate.mp4" type="video/mp4" />
+        <source src="videos/if-01-captcha-gate.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/if-01-captcha-gate.png" data-caption="结束帧 · if-01-captcha-gate" aria-label="放大结束帧">
+            <img src="videos/if-01-captcha-gate.png" alt="if-01-captcha-gate screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="if-02-cdp-wait">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">— · if-02-cdp-wait</p>
+      <h2>人机检测改用连接真实浏览器（选项 C 预检流程）</h2>
+      <p class="run-meta">最后跑 2026-08-08 20:41 · 共跑 3 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>起带 CDP 端口的 Chrome（独立临时 profile）→ 预检：一次 connect &lt;ws-url&gt; 完成权限握手（首次弹「允许远程控制」）→ 用户确认后，已授权会话上录屏 + 轮询 Generate 按钮状态，等用户手动过 Cloudflare 验证</p>
+      <h3>期望</h3>
+      <p>预检一次完成握手不连弹；连接与轮询可用；用户手动过验证后 Generate 变可用（实测：解锁条件=turnstile token+prompt 双满足）</p>
+      <h3>结果备注</h3>
+      <p class="notes">预检握手一次完成（首次弹「允许远程控制」确认后不再弹）→ connect ws-url 接入 → 用户手动过 Cloudflare 验证（turnstile token 816 字符写入成功）→ 补 prompt 后 Generate 变可用，门闩放行；全程未绕过反爬、停在提交前一步。探针教训：按钮解锁条件=token+prompt 双满足，轮询需同时检查两者</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/if-02-cdp-wait.png">
+        <source src="videos/if-02-cdp-wait.mp4" type="video/mp4" />
+        <source src="videos/if-02-cdp-wait.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/if-02-cdp-wait.png" data-caption="结束帧 · if-02-cdp-wait" aria-label="放大结束帧">
+            <img src="videos/if-02-cdp-wait.png" alt="if-02-cdp-wait screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="lightbox-backdrop" data-lightbox-close aria-label="关闭放大"></button>
+    <figure class="lightbox-panel" role="dialog" aria-modal="true" aria-label="关键帧放大">
+      <button type="button" class="lightbox-close" data-lightbox-close aria-label="关闭">×</button>
+      <img id="lightbox-img" alt="" />
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
+
+  <script>
+    (() => {
+      const box = document.getElementById("lightbox");
+      const img = document.getElementById("lightbox-img");
+      const cap = document.getElementById("lightbox-caption");
+      if (!box || !img) return;
+
+      function openLightbox(src, caption) {
+        img.src = src;
+        img.alt = caption || "";
+        cap.textContent = caption || "";
+        box.hidden = false;
+        document.body.classList.add("lightbox-open");
+      }
+
+      function closeLightbox() {
+        box.hidden = true;
+        img.removeAttribute("src");
+        document.body.classList.remove("lightbox-open");
+      }
+
+      document.addEventListener("click", (event) => {
+        const zoom = event.target.closest(".shot-zoom");
+        if (zoom) {
+          openLightbox(zoom.dataset.full || zoom.querySelector("img")?.src, zoom.dataset.caption || "");
+          return;
+        }
+        if (event.target.closest("[data-lightbox-close]")) closeLightbox();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !box.hidden) closeLightbox();
+      });
+    })();
+  </script>
+</body>
+</html>

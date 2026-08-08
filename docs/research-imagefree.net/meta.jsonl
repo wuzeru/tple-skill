@@ -1,0 +1,2 @@
+if-01-captcha-gate|人机验证门闩观察|OBSERVE|Generate 按钮 disabled，Cloudflare「请验证您是真人」turnstile 在页；门闩未过，未尝试绕过 · 录屏:原生 6.3s/63帧
+if-02-cdp-wait|人机检测改用连接真实浏览器（选项 C 预检流程）|PASS|预检握手一次完成（首次弹「允许远程控制」确认后不再弹）→ connect ws-url 接入 → 用户手动过 Cloudflare 验证（turnstile token 816 字符写入成功）→ 补 prompt 后 Generate 变可用，门闩放行；全程未绕过反爬、停在提交前一步。探针教训：按钮解锁条件=token+prompt 双满足，轮询需同时检查两者

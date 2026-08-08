@@ -1,0 +1,14 @@
+{
+  "if-01-captcha-gate": {
+    "lastRanAt": "2026-08-08T05:45:50.480Z",
+    "runCount": 1
+  },
+  "if-02-headed-wait": {
+    "lastRanAt": "2026-08-08T05:55:42.012Z",
+    "runCount": 2
+  },
+  "if-02-cdp-wait": {
+    "lastRanAt": "2026-08-08T12:41:41.875Z",
+    "runCount": 3
+  }
+}

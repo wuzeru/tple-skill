@@ -1,0 +1,3 @@
+id,module,title,precondition,steps,expected,priority,status,notes
+if-01-captcha-gate,captcha,人机验证门闩观察,未登录态（公开路径）,open 首页；检查 Generate 按钮状态与 Cloudflare turnstile 验证框,Generate 被「请验证您是真人」门闩拦截（disabled）；如实记录现象，不绕过,P0,observe,Generate 被 Cloudflare turnstile 拦截；原生录屏 6.3s
+if-02-cdp-wait,captcha,人机检测改用 --auto-connect 连接 Chrome,未登录态,起带 --remote-debugging-port 的 Chrome 打开目标站；agent 经 CDP/auto-connect 连入同一浏览器；用户在窗口手动过验证；agent 轮询检测门闩放行,连接成功；用户过验证后 Generate 变可用；agent 在用户浏览器里续操作，不绕过反爬,P0,passed,选项 C 全链路通：预检握手→connect 接入→用户手动过验证→token+prompt 满足后 Generate 解锁
