@@ -1,0 +1,12 @@
+{
+  "if-01-captcha-gate": {
+    "uc": "—",
+    "steps": "open 首页；检查 Generate Free Image 按钮状态与 Cloudflare turnstile 验证框",
+    "expected": "Generate 被「请验证您是真人」门闩拦截（disabled）；如实记录现象，不尝试绕过"
+  },
+  "if-02-cdp-wait": {
+    "uc": "—",
+    "steps": "起带 CDP 端口的 Chrome（独立临时 profile）→ 预检：一次 connect <ws-url> 完成权限握手（首次弹「允许远程控制」）→ 用户确认后，已授权会话上录屏 + 轮询 Generate 按钮状态，等用户手动过 Cloudflare 验证",
+    "expected": "预检一次完成握手不连弹；连接与轮询可用；用户手动过验证后 Generate 变可用（实测：解锁条件=turnstile token+prompt 双满足）"
+  }
+}
