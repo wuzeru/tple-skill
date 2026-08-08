@@ -42,7 +42,7 @@ docs/<slice>-e2e/                 # 或仓库约定目录
 Task Progress:
 - [ ] 0. 模式判定：验收模式（默认）/ 调研模式（见下）
 - [ ] 1. 定 case 清单（有 csv 就筛；没有则按项目总结草案 → 用户确认 → 落盘 csv）
-- [ ] 2. 起环境、确认端口，并清理残留 agent-browser
+- [ ] 2. 起环境、确认端口，清理残留 agent-browser，并开 dashboard（结束时 stop）
 - [ ] 2.5 登录态决策：检测到需登录 → 暂停询问用户（复用本地 Chrome profile / headed 手动登录 / 提供凭据 / 公开路径）
 - [ ] 3. 写 run-cases（原生 record 为主；过短回退分镜）
 - [ ] 4. 跑全量，写 meta.jsonl，用 ffprobe 验视频时长
@@ -180,6 +180,17 @@ node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失
 
 装完**重跑 `check-env`** 确认全部 ✓，再进入后续步骤。安装失败（无网络 / 无权限 / 目标 web 起不来）才停下来向用户如实报告，不要带病继续，也不要假装检查通过。
 
+**可观测性：首次使用 agent-browser 前开 dashboard，套件结束后关掉（必须）：**
+
+```bash
+agent-browser dashboard start            # 起观测仪表盘（默认 :4848；被占用用 dashboard start --port <n>）
+open http://localhost:4848               # 打开（macOS；Windows 用 start http://localhost:4848）
+# ……跑完所有 case / 套件结束后：
+agent-browser dashboard stop
+```
+
+start/stop 均幂等（重复 start 返回 already running、重复 stop 返回 not running），且不影响普通命令——失败不阻塞主流程。仪表盘用于实时观察 session/页面/命令轨迹，排查「页面没到位/ref 失效/录屏断帧」类问题时优先看它。
+
 - 确认 web / api 可访问；多 worktree 时**避开占用端口**，用 env 注入：
   - `WEB_URL` / `API_URL`
 - 破坏性探测（如 `kill -STOP` API）跑完必须 `kill -CONT`
@@ -219,7 +230,8 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 | 选项 | 做法 | 适用 |
 |------|------|------|
 | **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出本地 Chrome profile 供用户选择；选定后，**该套件后续所有 agent-browser 命令都带** `--profile "<名字>"` + `--executable-path "<系统 Chrome 可执行路径>"`（macOS 默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`） | 用户本地 Chrome 已登录目标站点（最常见） |
-| **B. headed 引导手动登录** | `--headed --profile <新建临时目录>` 打开登录页，用户手动完成登录（含 2FA/SSO/人机验证）；轮询验证登录成功后，后续命令继续带 `--profile <该临时目录>` 续跑（已实测：验证码场景整条链路可用，轮询首选 `get url`） | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
+| **B. headed 引导手动登录** | `--headed --profile <新建临时目录>` 打开登录页，用户手动完成登录（含 2FA/SSO）；轮询验证登录成功后，后续命令继续带 `--profile <该临时目录>` 续跑（已实测：验证码场景整条链路可用，轮询首选 `get url`） | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
+| **C. 连接用户真实浏览器（人机检测场景）** | 起带 CDP 调试端口的 Chrome（独立临时 profile）→ **先做一次预检调用完成权限握手**（首次弹「允许远程控制」，用户确认后不再出现）→ 确认后才进轮询/录屏主流程；用 `agent-browser connect <ws-url>` 接入，见 [reference.md](reference.md)「选项 C」 | 登录/生成路径被**人机检测门闩**拦死（Cloudflare turnstile 等），需要人在浏览器手动完成、agent 同上下文续操作 |
 | 提供凭据 | 用户给出账号密码，用 `fill` 登录（凭据不落报告正文，env 只写「账号：用户提供」） | 用户明示愿意提供 |
 | 放弃登录 | 只走公开路径，报告 lede/env 标注「未登录态」 | 用户不想登录或调研模式默认 |
 
@@ -227,11 +239,12 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 
 - **选项 A 必须带 `--executable-path` 指向系统真实 Chrome**：agent-browser 默认启动 Chrome for Testing，其 macOS Keychain 加密密钥（`Chromium Safe Storage`）与真实 Chrome（`Chrome Safe Storage`）不同，复制过来的 v10 加密 cookie 会**静默解密失败**、登录态全丢。机制与实测证据见 [reference.md](reference.md)「登录态决策」
 - **选项 A/B 的 `--profile` flag 每条命令都要带**（daemon 按命令参数启动浏览器，漏带即回到无登录态的默认 session）
+- **选项 C 必须先预检**：走「用户真实浏览器」分支时，先做一次普通调用完成权限握手（首次连接 Chrome 弹「允许远程控制」，用户确认一次后不再出现），**确认后再进录屏/轮询主流程**。严禁用 `--auto-connect` 重试循环等就绪——M136+ 下发现不了端口，且每次失败都自动拉起浏览器，权限确认框会连弹打断用户
 - 选定登录态后，先在目标站验证登录成功（可观察信号：用户头像元素 / 登录态 cookie / 跳转后的 URL）再进 Step 3；验证不过就回报用户，不带病开跑
 - **不要用 `--auto-connect` + `state save` 导出 cookie 来复用登录态**：那是 browser 级 `Network.getAllCookies`，多 profile 场景会把所有 profile 的 cookie 混在一起，同站点 cookie 互相覆盖，登录态归属不可控（见反模式表）
 - 报告 env 里注明所用登录态，如：`登录态：复用本地 Chrome profile "working"` / `登录态：headed 手动登录` / `未登录态`
 
-【调研模式】同一决策门闩：无凭据且用户不选 A/B 时，维持原行为——只走公开路径，并在报告 lede/env 标注「未登录态调研」。用户选择复用/手动登录后按选项 A/B 执行，登录态同样不落报告正文。
+【调研模式】同一决策门闩：无凭据且用户不选 A/B/C 时，维持原行为——只走公开路径，并在报告 lede/env 标注「未登录态调研」。用户选择复用/手动登录/连接真实浏览器后按选项 A/B/C 执行，登录态同样不落报告正文。
 
 ---
 
@@ -480,6 +493,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 ## 质量门槛（完成前自检）
 
 - [ ] 开跑前 / 每 case 前已清理残留 agent-browser（含 `agent-browser close --all`）
+- [ ] 套件期间 dashboard 开着（首次用 agent-browser 前 `dashboard start`），套件结束后 `dashboard stop`
 - [ ] 检测到需登录时走了 Step 2.5 决策门闩（未静默选路径）；选项 A 所有命令带 `--profile` + `--executable-path`；选项 B 登录成功已验证后再续跑
 - [ ] run-cases.mjs 包含 logCase 函数（同时写 meta.jsonl + runs.json），未用简化版 writeMeta 替代
 - [ ] 多数 case 为原生录屏且 duration ≥ 4s；回退 case 在日志里标明
@@ -519,6 +533,8 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 检测到登录墙/401/403 仍静默走公开路径或静默猜登录方式 | 停下走 Step 2.5：列选项问用户（复用 profile / headed 手动登录 / 提供凭据 / 公开路径） |
 | 用 `--auto-connect` + `state save` 导 cookie 复用多 profile 登录态 | `Network.getAllCookies` 是 browser 级，混入所有 profile 的 cookie、归属不可控；复用登录态用 `--profile <名字>`（见 reference.md「登录态决策」） |
 | `--profile <名字>` 复用真实 Chrome 登录态但不带 `--executable-path` | Chrome for Testing 的 Keychain 密钥（`Chromium Safe Storage`）与真实 Chrome 不同，v10 cookie 静默解不开、登录态全丢；必须 `--executable-path` 指向系统 Chrome |
+| 用 `--auto-connect` 重试循环等 CDP 就绪（人机检测/连用户浏览器场景） | M136+ 发现不了端口（无 DevToolsActivePort），每次失败还自动拉起浏览器，权限确认框连弹打断用户；改用显式 `connect <ws-url>`（从 `:9222/json/version` 取）|
+| 连接用户真实浏览器不做预检就直接进录屏/轮询主流程 | 首次连接 Chrome 会弹「允许远程控制」，先做一次普通调用完成权限握手、等用户确认，再进主流程 |
 | 【调研】在目标站真实下单/删除/批量注册 | 只读探索；表单填到提交前一步截图，用户明示才可提交 |
 | 【调研】走不通就进 auto-fix「修复」 | 调研模式跳过 Step 5；FAIL 是调研发现，notes 记原因即可 |
 | 【调研】遇 401/403/验证码就猜「风控针对我们」 | 如实记 BLOCKED + 实际现象；不绕过反爬，不重试轰炸 |

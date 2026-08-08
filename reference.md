@@ -15,6 +15,8 @@ agent-browser get count ".item"   # 元素计数
 agent-browser screenshot out.png  # 截图
 agent-browser record start x.webm / record stop
 agent-browser close --all         # 关闭所有 session
+agent-browser dashboard start     # 起观测仪表盘 :4848（套件开始前必做；幂等）
+agent-browser dashboard stop      # 套件结束后关（幂等，不影响普通命令）
 ```
 
 四条最贵的教训：
@@ -168,6 +170,28 @@ done
 
 跨步骤保持（实测确认）：登录态写入该 `--profile` 目录，`close` 后**新 session 挂同一目录即复用**（目录路径模式不经过 Keychain 加解密差异，同产品持久化）。需要导出时用 `state save/load`（**仅限单浏览器/单 profile 场景**，见下对照表）。
 
+### 选项 C：连接用户真实浏览器（人机检测 / 需要人在场操作的场景）
+
+**适用**：登录/生成路径被**人机检测门闩**拦死（Cloudflare turnstile、hCaptcha 等，自动化不能也不应绕过），需要人在浏览器里手动完成，agent 随后在**同一浏览器上下文**续操作。
+
+**连接方式（0.26.0 实测）**：Chrome M136+ 下 `--auto-connect` / `--cdp <port>` **发现不了**已开的 CDP 端口（DevToolsActivePort 不再写入，上游 vercel-labs/agent-browser#1321）；且 `--auto-connect` 每次失败都会触发「自动拉起浏览器」→ macOS 反复弹权限确认框。**唯一可靠的接入方式是显式 `connect <ws-url>`**：
+
+```bash
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# 1) 起带调试端口的 Chrome（独立临时 profile，勿动用户日常 Chrome）
+"$CHROME" --remote-debugging-port=9222 --user-data-dir="$TMPDIR/tple-cdp-profile" \
+  --no-first-run --no-default-browser-check "$URL" &
+
+# 2) 预检（preflight）：一次普通调用完成权限握手，再进主流程
+WS=$(curl -s http://localhost:9222/json/version | python3 -c "import json,sys;print(json.load(sys.stdin)['webSocketDebuggerUrl'])")
+agent-browser --session tple connect "$WS"          # 首次连接：Chrome 弹「允许远程控制」，用户确认一次，之后不再出现
+agent-browser --session tple get url                # 验证连接可用
+
+# 3) 预检通过后，才进主流程（轮询门闩状态、等用户手动操作、续跑 case）
+```
+
+**预检纪律（重要，实测教训）**：进入「用户真实浏览器」分支时，**必须先做这一次预检调用并停下等用户确认权限**（首次连接会弹「允许远程控制」，用户点允许；之后再连不再弹）。确认后再进录屏/轮询主流程。**严禁用 `--auto-connect` 重试循环等就绪**——它既发现不了 M136+ 端口，每次失败还自动拉起浏览器，造成权限确认框连弹（实测：20 次重试 = 20+ 次弹窗，直接打断用户操作）。预检通过后后续命令都走 `--session tple`（已连接的会话），不再触发弹窗。
+
 ### 方案对照表（为什么只推荐 A 的名字模式 + 真实 Chrome）
 
 | 方式 | 行为 | 结论 |
@@ -177,6 +201,8 @@ done
 | `--profile <名字>`（默认 Chrome for Testing） | 复制到临时目录启动、无锁冲突，但 cookie 解不开 | ⚠️ 无锁但**登录态静默丢失**（Keychain 密钥不同） |
 | `--profile <名字>` + `--executable-path <系统 Chrome>` | 复制到临时目录 + 用真实 Chrome 启动 | ✅ 推荐：无锁冲突，登录态完整继承（macOS 实测） |
 | 选项 B 临时目录 profile + headed 手动登录 | 与真实 Chrome 无关，同产品加解密一致 | ✅ 推荐：2FA/SSO/人机验证场景（实测：验证码页手动登录 → 轮询命中 → 跨会话保持） |
+| 选项 C：起带 CDP 端口 Chrome + `connect <ws-url>` | 先预检握手（首次弹「允许远程控制」，确认后不再弹），再进主流程 | ✅ 人机检测门闩场景（实测：接入成功 + 轮询实时看到门闩状态） |
+| `--auto-connect` / `--cdp <port>` 发现连接 | M136+ 发现不了端口（无 DevToolsActivePort），每次失败还自动拉起浏览器 → 权限确认框连弹 | ❌ 勿用；改用显式 `connect <ws-url>` 预检 |
 
 不清理时常见症状：`record stop` ~20s、`duration` ~1.0–1.3s、约 10–15 帧。  
 清理后同脚本可稳定到 6–12s、`stop` ~200ms。
