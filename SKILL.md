@@ -219,7 +219,7 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 | 选项 | 做法 | 适用 |
 |------|------|------|
 | **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出本地 Chrome profile 供用户选择；选定后，**该套件后续所有 agent-browser 命令都带** `--profile "<名字>"` + `--executable-path "<系统 Chrome 可执行路径>"`（macOS 默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`） | 用户本地 Chrome 已登录目标站点（最常见） |
-| **B. headed 引导手动登录** | `--headed --profile <新建临时目录>` 打开登录页，用户手动完成登录（含 2FA/SSO）；轮询验证登录成功后，后续命令继续带 `--profile <该临时目录>` 续跑 | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
+| **B. headed 引导手动登录** | `--headed --profile <新建临时目录>` 打开登录页，用户手动完成登录（含 2FA/SSO/人机验证）；轮询验证登录成功后，后续命令继续带 `--profile <该临时目录>` 续跑（已实测：验证码场景整条链路可用，轮询首选 `get url`） | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
 | 提供凭据 | 用户给出账号密码，用 `fill` 登录（凭据不落报告正文，env 只写「账号：用户提供」） | 用户明示愿意提供 |
 | 放弃登录 | 只走公开路径，报告 lede/env 标注「未登录态」 | 用户不想登录或调研模式默认 |
 

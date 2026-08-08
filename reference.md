@@ -148,22 +148,25 @@ agent-browser --session tple --profile "working" --executable-path "$CHROME" eva
 
 ### 选项 B：headed 引导手动登录
 
+**已实测**（captcha fixture :4175，图形验证码登录页）：headed 弹窗 → 人工过验证码+登录 → 轮询 3s 命中 → 跨会话登录态保持，整条链路可用。
+
 ```bash
 PROF="$TMPDIR/tple-manual-login-profile"   # 独立临时目录，勿复用用户真实 Chrome 目录
 mkdir -p "$PROF"
 agent-browser --session tple --headed --profile "$PROF" open <目标站登录页>
-# 提示用户在弹出的窗口里手动完成登录（含 2FA/SSO）；登录完成前轮询等待
-# （轮询用 get count / get url / cookies get，间隔用 wait <ms> 节流；
-#  不要用 wait <selector>——本 skill 约定 wait 只接毫秒数）：
+# 提示用户在弹出的窗口里手动完成登录（含 2FA/SSO/人机验证）；登录完成前轮询等待
+# （实测 get url 是最快信号——URL 跳转先于页面渲染完成；不要用 wait <selector>，
+#  本 skill 约定 wait 只接毫秒数）：
 for i in $(seq 1 60); do
-  n=$(agent-browser --session tple get count "img[alt*='avatar'], .user-menu" 2>/dev/null | tr -d ' ')
-  [ "$n" -gt 0 ] 2>/dev/null && break      # 登录成功标志元素出现；也可轮询 get url 离开登录页 / cookies get 出现会话 cookie
-  agent-browser --session tple wait 2000 >/dev/null 2>&1
+  url=$(agent-browser --session tple get url 2>/dev/null | head -1)
+  case "$url" in */app*|*/dashboard*) break;; esac   # 换成目标站的登录后 URL 特征
+  sleep 3
 done
+# URL 命中后再用页面内信号复核（get count 登录态元素 / cookies get 会话 cookie），双确认才续跑
 # 验证通过后，后续 case 继续带 --profile "$PROF" 续跑原流程
 ```
 
-跨步骤保持：复用该 `--profile "$PROF"` 目录即可；需要导出时用 `state save/load`（**仅限单浏览器/单 profile 场景**，见下对照表）。
+跨步骤保持（实测确认）：登录态写入该 `--profile` 目录，`close` 后**新 session 挂同一目录即复用**（目录路径模式不经过 Keychain 加解密差异，同产品持久化）。需要导出时用 `state save/load`（**仅限单浏览器/单 profile 场景**，见下对照表）。
 
 ### 方案对照表（为什么只推荐 A 的名字模式 + 真实 Chrome）
 
@@ -173,7 +176,7 @@ done
 | `--profile <目录路径>` 直接挂用户 Chrome 目录 | 运行中的 Chrome 独占 profile 锁 | ⚠️ 锁冲突风险 |
 | `--profile <名字>`（默认 Chrome for Testing） | 复制到临时目录启动、无锁冲突，但 cookie 解不开 | ⚠️ 无锁但**登录态静默丢失**（Keychain 密钥不同） |
 | `--profile <名字>` + `--executable-path <系统 Chrome>` | 复制到临时目录 + 用真实 Chrome 启动 | ✅ 推荐：无锁冲突，登录态完整继承（macOS 实测） |
-| 选项 B 临时目录 profile + headed 手动登录 | 与真实 Chrome 无关，同产品加解密一致 | ✅ 推荐：2FA/SSO 场景 |
+| 选项 B 临时目录 profile + headed 手动登录 | 与真实 Chrome 无关，同产品加解密一致 | ✅ 推荐：2FA/SSO/人机验证场景（实测：验证码页手动登录 → 轮询命中 → 跨会话保持） |
 
 不清理时常见症状：`record stop` ~20s、`duration` ~1.0–1.3s、约 10–15 帧。  
 清理后同脚本可稳定到 6–12s、`stop` ~200ms。
