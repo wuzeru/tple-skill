@@ -12,7 +12,8 @@ agent-browser eval "<js>"         # 执行 JS；JS 一律双引号包裹，内�
 agent-browser get url             # 当前 URL
 agent-browser get text body       # 页面文本（注意：没有裸 `body` 命令）
 agent-browser get count ".item"   # 元素计数
-agent-browser screenshot out.png  # 截图
+agent-browser screenshot out.png  # 截图（决策点先看页面再动手，见「操作前双通道判断」）
+agent-browser screenshot --annotate map.png  # 编号标签 [N] 对齐 @eN，给多模态模型看 canvas/自绘控件
 agent-browser record start x.webm / record stop
 agent-browser close --all         # 关闭所有 session
 agent-browser dashboard start     # 起观测仪表盘 :4848（套件开始前必做；幂等）
@@ -28,6 +29,26 @@ agent-browser dashboard stop      # 套件结束后关（幂等，不影响普�
 - **录中 `open`（整页导航）会断帧捕获**（0.26.0）：见下方「原生 record 成功契约」。
 
 完整版：`agent-browser skills get core --full`（与 CLI 版本匹配，优先于凭记忆猜命令）。
+
+## 操作前双通道判断（screenshot + DOM）
+
+CLI 自身不做视觉理解：`snapshot`/`click`/`fill` 走 a11y 树与选择器（确定、便宜），**视觉是给调用方（多模态模型）的证据层**。操作前把两条通道都拿上，综合判断再动手：
+
+```bash
+agent-browser screenshot before.png   # 视觉通道：布局/遮罩/loading/灰态/canvas 内容
+agent-browser snapshot -i             # 结构通道：可操作元素 + @ref
+# 综合判断：截图定「页面什么状态、哪里该点」，DOM 定「用哪个 ref 点」
+agent-browser click @e5               # 动手
+agent-browser screenshot after.png    # 或 get url / get text 验证效果（点击纪律）
+```
+
+规则：
+
+- **决策点截，不逐操作截**：导航后、关键/破坏性操作前、DOM 与预期不符时。每张截图都是多模态 token + 时延，逐步全截既慢又贵；FAIL 取证截图已有约定，这里补的是「事前」半边。
+- **冲突裁决**：信截图的可见性、信 DOM 的可操作性。典型：DOM 里有按钮但截图里被 modal/cookie 横幅盖住 → 先关遮罩再操作，不硬点 ref。
+- **录屏契约不变**：判断性截图放 `record start` 之前；录中仍只做 click/fill/wait（截图时延会录进视频，见「原生 record 成功契约」）。
+- **a11y 树看不透时升级 `--annotate`**（canvas、自绘组件、无名字图标按钮）：截图上打编号标签，`[N]` 一一对应 `@eN`，视觉判断直接映射回 DOM 操作。
+- **坐标兜底**：`get box <sel>` 拿包围盒 + `mouse move/down/up x y`，DOM 与 annotate 都失效时的最后手段。
 
 ## meta.jsonl
 
