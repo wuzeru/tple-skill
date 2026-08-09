@@ -286,6 +286,7 @@ ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 videos/02-x
   - **禁止** `press Meta+a` / `Cmd+A`：按键可能漏到 macOS 前台（曾误出「关于本机」等系统窗）
 - 登录态：缓存 token；`record start` 后必须写回。若 Step 2.5 选了选项 A/B，该套件**每条命令都要带**对应 `--profile`（选项 A 另带 `--executable-path`）flag，漏带即丢登录态
 - 页面变化后重新 `snapshot -i` 再点 ref
+- **操作前双通道判断（screenshot + DOM）**：决策点（导航后、关键/破坏性操作前、DOM 与预期不符时）先 `screenshot` 看页面再 `snapshot -i` 拿 ref，**综合判断后动手**——截图负责「页面什么状态、什么可见、有无遮罩/loading/灰态/canvas 内容」，DOM 负责「用哪个 ref 操作」。两通道冲突时信截图的可见性（DOM 有按钮但被 modal 盖住 → 先关遮罩，不硬点 ref）、信 DOM 的可操作性。a11y 树看不透（canvas/自绘控件）用 `screenshot --annotate`，编号 `[N]` 对齐 `@eN`。判断性截图放 `record start` **之前**，录中仍只做 click/fill/wait（见录屏成功契约）；决策点截，不逐原子操作截（多模态 token/时延成本）。展开见 [reference.md](reference.md)「操作前双通道判断」
 - 断言：`get text body` / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
 - **断言防假阳性**：命令报连接错误 / 页面为空时，判 BLOCKED 或重试，不能按「数据无变化」判 PASS（曾把 eval 连接失败误判成校验生效）
 - 同步更新 `runs.json`：该 case 的 `lastRanAt`（ISO）与 `runCount`（累加）；报告展示「最后跑 / 共跑 N 次」
@@ -498,6 +499,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 - [ ] run-cases.mjs 包含 logCase 函数（同时写 meta.jsonl + runs.json），未用简化版 writeMeta 替代
 - [ ] 多数 case 为原生录屏且 duration ≥ 4s；回退 case 在日志里标明
 - [ ] 无 `Meta+a` 等易泄漏到系统的快捷键
+- [ ] 决策点（导航后/关键操作前/DOM 与预期不符）已先 screenshot + snapshot 双通道判断再动手；判断性截图在 `record start` 之前
 - [ ] HTML 可双击打开，侧栏跳转、视频可播；样式来自 `assets/report.css`
 - [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
