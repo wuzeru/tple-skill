@@ -51,7 +51,7 @@ agent-browser screenshot after.png    # 或 get url / get text 验证效果（�
 - **冲突裁决**：信截图的可见性、信 DOM 的可操作性。典型：DOM 里有按钮但截图里被 modal/cookie 横幅盖住 → 先关遮罩再操作，不硬点 ref。
 - **录屏契约不变**：判断性截图放 `record start` 之前；录中仍只做 click/fill/wait（截图时延会录进视频，见「原生 record 成功契约」）。
 - **a11y 树看不透时升级 `--annotate`**（canvas、自绘组件、无名字图标按钮）：截图上打编号标签，`[N]` 一一对应 `@eN`，视觉判断直接映射回 DOM 操作。
-- **坐标兜底**：`get box <sel>` 拿包围盒 + `mouse move/down/up x y`，DOM 与 annotate 都失效时的最后手段。**自定义组件只认真实鼠标事件的场景也用它**（实测：TikTok Symphony Creative Studio 的 Terms 弹窗 Accept 按钮，`KS-BUTTON`/`KS-MODAL` 自定义元素、class 含 `Ks*`，CSS/ref 点击与 JS `.click()` 全部静默无效——事件绑定校验 `isTrusted`）：`eval` 或 `get box` 拿按钮中心坐标 → `mouse move x y` → `mouse down` → `mouse up`（CDP 可信事件，一次成功）。点击纪律同前：点完验证效果，别信静默返回。
+- **坐标兜底**：`get box <sel>` 拿包围盒 + `mouse move <x> <y>` → `mouse down` → `mouse up`，DOM 与 annotate 都失效时的最后手段。**自定义组件只认真实鼠标事件的场景也用它**（实测：TikTok Symphony Creative Studio 的 Terms 弹窗 Accept 按钮，`KS-BUTTON`/`KS-MODAL` 自定义元素、class 含 `Ks*`，CSS/ref 点击与 JS `.click()` 全部静默无效——事件绑定校验 `isTrusted`）：`eval` 或 `get box` 拿按钮中心坐标 → `mouse move <x> <y>` → `mouse down` → `mouse up`（CDP 可信事件，一次成功）。点击纪律同前：点完验证效果，别信静默返回。
 
 ## meta.jsonl
 
@@ -249,7 +249,7 @@ ffprobe duration ≥4s 且帧数持续（-count_frames，≈10fps×秒数）采�
 # ⚠️ 不用字节体积判健康：VP9 10fps 下 5s 干净录制仅 ~32KB；空壳真特征=时长正常但帧数极少
 ```
 
-**防御性 `record stop`（每 case 开头必加）**：被用户中断的 `record start` 不会自动收尾，残留的录制状态会让下一次 `record start` 报 `Recording already active`，最终 `stop` 产出上百秒的空壳长视频（实测 165.3s）。`record stop` 无录制时返回 `No recording in progress`、不报错，开头兜底一次无副作用。
+**防御性 `record stop`（每 case 开头必加）**：被用户中断的 `record start` 不会自动收尾，残留的录制状态会让下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒的空壳长视频（实测 165.3s）。`record stop` 无录制时返回 `No recording in progress`、不报错，开头兜底一次无副作用。
 
 ⚠️ **0.26.0 录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本必产出空视频。登录态写回用 `eval`，不用 `open` 刷新。
 

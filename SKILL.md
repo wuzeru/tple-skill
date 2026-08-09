@@ -259,7 +259,7 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 
 1. 录前完成登录 / 导航准备（可用 API token + `localStorage`）
 2. **录前把页面完全就位**：`open <url>` + `wait` 等渲染完成。⚠️ **0.26.0 中录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本**必产出空视频**，不要照做
-3. **防御性 `record stop`（幂等：无录制时返回 `No recording in progress` 不报错）→ `record start <path.webm>`**。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `stop` 产出上百秒空壳长视频——每 case 开头先兜底 stop 一次
+3. **防御性 `record stop`（幂等：无录制时返回 `No recording in progress` 不报错）→ `record start <path.webm>`**。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒空壳长视频——每 case 开头先兜底一次 `record stop`
 4. 登录态需写回 token 时用 `eval` 写 localStorage（**不用 `open` 刷新页面**）；操作只做点击/填表，页间移动用**点击链接**（`click @ref`）或 `back`；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
 5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
 6. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
@@ -529,9 +529,9 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 因一次 ~1s 空壳就放弃原生 | 先清理进程，按成功契约重试；仍短再分镜回退 |
 | `record start` 后再 `open` 目标页（0.26.0 断帧捕获，产出空壳 webm） | 录前 open + wait 就位页面再 start；录中只用点击/`back` 移动，token 用 `eval` 写回 |
 | CSS 选择器 `click` 返回 `✓ Done` 就当点上了 | 部分页面会静默落空；点击后验证 DOM/URL 效果，不过就改 snapshot ref 点击重试 |
-| 自定义组件点击无效就归因风控、反复重试 | 元素是自定义组件（tagName 带连字符 / `Ks*` 类名）→ 改坐标鼠标点击：`eval` 拿中心坐标 + `mouse move/down/up`（CDP 可信事件） |
+| 自定义组件点击无效就归因风控、反复重试 | 元素是自定义组件（tagName 带连字符 / `Ks*` 类名）→ 改坐标鼠标点击：`eval` 拿中心坐标 + `mouse move <x> <y>` → `mouse down` → `mouse up`（CDP 可信事件） |
 | 遇阻就重启浏览器（`close --all` + `pkill` 当万能药） | 有状态弹窗（Terms/引导页）在**同一实例内**处理（坐标点击）；`--profile <名字>` 每次启动都重新复制 profile，客户端存储的同意状态从「未同意」重置，用户手动点过的 Accept 白费；重启只用于残留进程污染 |
-| 被中断的录制不管，直接下一次 `record start` | 每 case 开头防御性 `record stop`（幂等）；否则报 `Recording already active`，最终 `stop` 产出上百秒空壳 |
+| 被中断的录制不管，直接下一次 `record start` | 每 case 开头防御性 `record stop`（幂等）；否则报 `Recording already active`，最终 `record stop` 产出上百秒空壳 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
 | 只在聊天里贴 PASS 表 | 产出可打开的 HTML + videos |
