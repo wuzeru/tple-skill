@@ -1,0 +1,7 @@
+11-selfcheck-git|git 安装自检：落后检测 + 摘要|PASS|exit=0；当前 v0.0.5 / 最新 v0.0.7 / 落后摘要 均输出=true（GitHub API 真实对比）；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）
+12-json-cache|--json 输出与 24h 缓存|PASS|--json exit=0 字段(current/latest/behind/installType)正确=true；第二次缓存命中=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）
+13-offline-degrade|离线静默降级（永不阻塞）|PASS|exit=0；降级提示输出=true；无堆栈报错（永不阻塞契约）；录屏：分镜回退 6.4s（终端实况回放：命令真跑、输出真捕获）
+14-git-dirty-refuse|--apply 拒绝脏 git 仓库|PASS|exit=1（期望 1）；拒绝强拉提示=true；HEAD 未动=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）
+15-git-apply-ff|--apply 干净 git 安装：ff-only 成功 + 复检|PASS|exit=0；ff-only 成功=true；check-env 复检=true；HEAD 已前进到远端最新=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）
+16-zip-apply|--apply zip 安装：覆盖保持根级布局|PASS|exit=0；VERSION=v0.0.7 fe0b092 2026-08-09T03:58:18Z；无 CLAUDE.md=true；本地附加文件保留=true；check-env 复检=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）
+17-update-route|/tple-skill update 路由：opencode web 真实执行更新|PASS|opencode serve 1.14.48（web UI :4567）+ litellm/qwen3.7-plus：会话收到 /tple-skill update → agent 按 SKILL.md 路由执行 --force 检出落后（v0.0.5，落后 5 提交）→ --apply 因未追踪副本被拒后自主诊断（stash→pull→stash pop 处理冲突后 rm 副本 ff-only）→ HEAD=1b4cabf=远端 main 最新、describe v0.0.7-3、落后 0、路由+脚本在位、树干净（外部 git 核验，不读自报）；期间 GitHub release 推进至 v0.0.8（main 另有 PR#15/#16 合入，159dc12），agent 如实记录 release 与 tag 差异；会话页 agent-browser 原生 record 13.1s/345KB

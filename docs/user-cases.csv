@@ -9,3 +9,10 @@ id,module,title,precondition,steps,expected,priority,status,notes
 08-status-codes,navigation,状态码页行为,未登录态,进入 /status_codes；依次访问 200/404/500 链接,各链接返回对应状态码页面,P1,pending,
 09-js-alerts,interaction,JS alert 交互,未登录态,进入 /javascript_alerts；点击 Click for JS Alert；接受弹窗,结果区显示 You successfully clicked an alert,P1,pending,
 10-basic-auth,auth,Basic Auth 受限路径,未登录态且无凭据,访问 /basic_auth,预期 401 受限并记 BLOCKED 验证受限路径如实记录,P1,pending,
+11-selfcheck-git,check-update,git 安装自检：落后检测 + 摘要,一次性克隆钉在 v0.0.5,克隆仓库并 checkout v0.0.5 → 拷入被测脚本 → 运行 check-update.mjs --force,输出当前 v0.0.5 / 最新 v0.0.7 / 落后提示与落后版本提交摘要；退出码 0,P0,passed,issue #13
+12-json-cache,check-update,--json 输出与 24h 缓存,11 的 fixture 目录,先跑 --json 再跑普通自检,JSON 含 current/latest/behind/installType 且字段正确；第二次 latest 来源显示 cache；两次退出码 0,P0,passed,issue #13
+13-offline-degrade,check-update,离线静默降级（永不阻塞）,12 的 fixture 目录,用坏代理强制 API 与 ls-remote 全失败后跑 --force 自检,输出「无法获取…不阻塞流程」；无报错堆栈；退出码 0,P0,passed,issue #13
+14-git-dirty-refuse,check-update,--apply 拒绝脏 git 仓库,13 的 fixture 有未提交改动,制造未提交改动后运行 --apply,列出改动并拒绝拉取；退出码 1；HEAD 未动,P0,passed,issue #13
+15-git-apply-ff,check-update,--apply 干净 git 安装：ff-only 成功 + 复检,裸仓模拟远端且安装目录落后 1 提交且树干净,运行 --apply,ff-only 拉取成功、版本前进、自动重跑 check-env 复检；退出码 0,P0,passed,issue #13
+16-zip-apply,check-update,--apply zip 安装：覆盖保持根级布局,VERSION=v0.0.5 的 zip 形态目录 + 本地附加文件,运行 --apply,下载 v0.0.7 zip 覆盖；VERSION 变 v0.0.7；无 CLAUDE.md；本地附加文件保留；复检依赖；退出码 0,P0,passed,issue #13
+17-update-route,check-update,/tple-skill update 路由：落后直接执行更新,裸仓远端钉 v0.0.5 + 安装目录脚本已追踪且落后 1 提交,模拟 update 路由两步：check-update --force 自检 → 落后则直接 --apply,自检报落后 v0.0.5 vs v0.0.7 含摘要退出码 0；--apply ff-only 成功 + check-env 复检退出码 0；HEAD 前进,P0,passed,issue #13
