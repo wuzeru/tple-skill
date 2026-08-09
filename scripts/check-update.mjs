@@ -15,7 +15,7 @@
  *   - 不阻塞主流程：自检（不带 --apply）永远退出码 0；拿不到最新版本时静默降级
  *   - 24h 内不重复联网（缓存在 skill 目录 .tple-update-cache.json，--force 绕过）
  *   - 不静默更新：--apply 由调用方显式传入，SKILL.md 约定先提示用户、确认后才执行
- *   - git 安装：有未提交改动或无法 fast-forward 时拒绝拉取，只警告
+ *   - git 安装：有未提交改动 / detached HEAD / 无法 fast-forward 时拒绝拉取并以退出码 1 报错（不强拉、不硬合并）
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";

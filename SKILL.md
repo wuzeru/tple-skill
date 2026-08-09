@@ -189,7 +189,7 @@ node ~/.claude/skills/tple-skill/scripts/check-update.mjs   # 本地版本 vs Gi
 - 自检**永远退出码 0**：拿不到最新版本（离线/API 限流）不当环境故障，静默跳过继续主流程
 - **落后时向用户提示**（当前 vX.Y.Z / 最新 vA.B.C / 落后版本摘要），让用户选择：更新或跳过。用户确认后才执行更新；跳过则照常继续，**不因未更新而中止 TPLE**
 - **更新须用户明示确认**：`node ~/.claude/skills/tple-skill/scripts/check-update.mjs --apply`。脚本按安装来源自动分流：
-  - **git 安装**（目录含 .git）：先查本地改动——有未提交改动**拒绝拉取只警告**；干净则 `git pull --ff-only`（无法 fast-forward 时报错退出，不硬合并）
+  - **git 安装**（目录含 .git）：先查本地改动——有未提交改动**拒绝拉取、列出改动并以退出码 1 报错**（不强拉）；干净则 `git pull --ff-only`（无法 fast-forward 时报错退出，不硬合并）
   - **zip 安装**（无 .git）：下载最新 release zip 覆盖安装（保持根级布局、zip 内本就不含 CLAUDE.md）；用户本地新增的文件不受影响。有 license key 的用户可改走 landingpage `/download?license=` 下载后手动覆盖
 - 两种路径更新后脚本都会自动**重跑 `check-env.mjs` 复检依赖**（新版可能引入新依赖）；复检不过再走 install-deps 流程
 

@@ -40,7 +40,7 @@ node scripts/check-update.mjs          # --json 机器可读；--force 绕过缓
 node scripts/check-update.mjs --apply
 ```
 
-- **git clone 安装**（目录含 `.git`）：`--apply` 会先查本地改动——有未提交改动**拒绝拉取只警告**；干净则 `git pull --ff-only`。或直接 `git pull` 亦可
+- **git clone 安装**（目录含 `.git`）：`--apply` 会先查本地改动——有未提交改动**拒绝拉取、列出改动并以退出码 1 报错**（不强拉）；干净则 `git pull --ff-only`。或直接 `git pull` 亦可
 - **zip 安装**（无 `.git`）：`--apply` 下载最新 release zip 覆盖安装（根级布局、不含 CLAUDE.md，你本地新增的文件不受影响）；有 license key 的从 landingpage `/download?license=` 下载后解压覆盖即可
 - 两种方式更新后脚本自动重跑 `check-env.mjs` 复检依赖（新版可能引入新依赖）
 
