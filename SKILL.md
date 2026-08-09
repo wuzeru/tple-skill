@@ -262,13 +262,15 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 3. **防御性 `record stop`（幂等：无录制时返回 `No recording in progress` 不报错）→ `record start <path.webm>`**。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `stop` 产出上百秒空壳长视频——每 case 开头先兜底 stop 一次
 4. 登录态需写回 token 时用 `eval` 写 localStorage（**不用 `open` 刷新页面**）；操作只做点击/填表，页间移动用**点击链接**（`click @ref`）或 `back`；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
 5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
-6. 立刻 `ffprobe`：duration **≥ 4s** 且**体积正常（≥50KB 级）**则转 mp4 采用；**短/空（<4s 或体积异常小）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退
+6. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
 
 **录中点击回退（SPA 因 `record start` 重挂载）**：`record start`（视口/焦点事件）可能触发 React 等 SPA 重渲染、DOM 重建——录前有效的 ref/eval 全部落空（元素「消失」、ref 几秒内过期）。ref 点击录中失败时改**轮询 eval 点击**：循环 ≤30 次 `{ eval 找元素；找到就 click；等 200ms }`，等重挂载完成后点中（实测第 8~9 次命中）。不要因此停止录制或重启浏览器。代码见 [reference.md](reference.md)「原生 record 成功契约」
 
 ```bash
-# 录后验收
+# 录后验收：时长 + 实际帧数（-count_frames 逐帧解算，比体积可靠）
 ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 videos/02-xxx.webm
+ffprobe -v error -count_frames -select_streams v:0 \
+  -show_entries stream=nb_read_frames -of default=nw=1:nk=1 videos/02-xxx.webm
 ```
 
 **分镜回退**（原生 < 4s 时）：关键步骤 `screenshot` → ffmpeg concat（每帧约 1.5–1.8s）。  

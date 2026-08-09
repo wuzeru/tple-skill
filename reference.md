@@ -245,18 +245,21 @@ writeToken（eval 写 localStorage）# ⚠️ 录中不要 open，会断帧捕�
 actions（点击/填表；页间移动用 click 链接或 back）+ agent-browser wait
 wait 1500–2000                   # 结尾停顿
 record stop
-ffprobe duration → ≥4s 且体积 ≥50KB 采用；否则按下方重试；仍短再分镜回退
+ffprobe duration ≥4s 且帧数持续（-count_frames，≈10fps×秒数）采用；否则按下方重试；仍短再分镜回退
+# ⚠️ 不用字节体积判健康：VP9 10fps 下 5s 干净录制仅 ~32KB；空壳真特征=时长正常但帧数极少
 ```
 
 **防御性 `record stop`（每 case 开头必加）**：被用户中断的 `record start` 不会自动收尾，残留的录制状态会让下一次 `record start` 报 `Recording already active`，最终 `stop` 产出上百秒的空壳长视频（实测 165.3s）。`record stop` 无录制时返回 `No recording in progress`、不报错，开头兜底一次无副作用。
 
 ⚠️ **0.26.0 录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本必产出空视频。登录态写回用 `eval`，不用 `open` 刷新。
 
-**短/空 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
+**短/断帧 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
 
 1. `record start` 前页面必须已渲染（open + wait 之后再 start）
-2. webm < 4s 或体积异常小（如 ~20KB）→ **先清理残留进程（见上，含 `close --all`），重试一次原生**
-3. 重试后仍短 → 分镜回退，并在 logCase notes 或日志里标明「分镜回退」
+2. webm < 4s 或**帧数寥寥**（`-count_frames` 实测，如 4s 却只有个位数帧）→ **先清理残留进程（见上，含 `close --all`），重试一次原生**
+3. 重试后仍短/断帧 → 分镜回退，并在 logCase notes 或日志里标明「分镜回退」
+
+**为什么用帧数而不用体积判健康**（0.26.0 实测）：VP9 10fps 下 5s 的干净原生录制仅 ~32KB（1280 宽、画面近乎静止）。若沿用「体积 ≥50KB」阈值，会把**真实捕获**误判成空壳、白白降级成分镜。空壳/断帧的真特征是**时长看着正常但 `-count_frames` 解出的帧数极少**（如标称 30s 只有 ~15KB、十几帧）——帧数是唯一可靠的判据。
 
 **录中点击回退：轮询 eval 点击（SPA 重挂载场景）**
 
