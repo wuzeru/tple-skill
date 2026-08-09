@@ -14,7 +14,10 @@ agent-browser get text body       # 页面文本（注意：没有裸 `body` 命
 agent-browser get count ".item"   # 元素计数
 agent-browser screenshot out.png  # 截图（决策点先看页面再动手，见「操作前双通道判断」）
 agent-browser screenshot --annotate map.png  # 编号标签 [N] 对齐 @eN，给多模态模型看 canvas/自绘控件
-agent-browser record start x.webm / record stop
+agent-browser get box <sel>       # 元素包围盒（坐标点击用）
+agent-browser mouse move <x> <y>  # CDP 可信鼠标事件（move / down / up）——自定义组件只认真实事件时的兜底
+agent-browser mouse down / mouse up
+agent-browser record start x.webm / record stop   # stop 幂等：无录制时返回 No recording in progress 不报错；每 case 开头防御性 stop 一次
 agent-browser close --all         # 关闭所有 session
 agent-browser dashboard start     # 起观测仪表盘 :4848（套件开始前必做；幂等）
 agent-browser dashboard stop      # 套件结束后关（幂等，不影响普通命令）
@@ -48,7 +51,7 @@ agent-browser screenshot after.png    # 或 get url / get text 验证效果（�
 - **冲突裁决**：信截图的可见性、信 DOM 的可操作性。典型：DOM 里有按钮但截图里被 modal/cookie 横幅盖住 → 先关遮罩再操作，不硬点 ref。
 - **录屏契约不变**：判断性截图放 `record start` 之前；录中仍只做 click/fill/wait（截图时延会录进视频，见「原生 record 成功契约」）。
 - **a11y 树看不透时升级 `--annotate`**（canvas、自绘组件、无名字图标按钮）：截图上打编号标签，`[N]` 一一对应 `@eN`，视觉判断直接映射回 DOM 操作。
-- **坐标兜底**：`get box <sel>` 拿包围盒 + `mouse move/down/up x y`，DOM 与 annotate 都失效时的最后手段。
+- **坐标兜底**：`get box <sel>` 拿包围盒 + `mouse move/down/up x y`，DOM 与 annotate 都失效时的最后手段。**自定义组件只认真实鼠标事件的场景也用它**（实测：TikTok Symphony Creative Studio 的 Terms 弹窗 Accept 按钮，`KS-BUTTON`/`KS-MODAL` 自定义元素、class 含 `Ks*`，CSS/ref 点击与 JS `.click()` 全部静默无效——事件绑定校验 `isTrusted`）：`eval` 或 `get box` 拿按钮中心坐标 → `mouse move x y` → `mouse down` → `mouse up`（CDP 可信事件，一次成功）。点击纪律同前：点完验证效果，别信静默返回。
 
 ## meta.jsonl
 
@@ -153,6 +156,8 @@ agent-browser --session tple --profile "working" --executable-path "$CHROME" ope
 
 **为什么必须 `--executable-path`（实测，0.26.0 macOS）**：`--profile <名字>` 会把所选 profile **复制到临时目录**（`$TMPDIR/agent-browser-profile-*`）再启动，不占用户正在用的 Chrome 的锁——这部分无需退出 Chrome，机制正确。但 agent-browser 默认启动的是自带的 **Chrome for Testing**：
 
+**⚠️ 同一复制机制的另一个后果——客户端同意状态会被重置**：每次 `--profile <名字>` 启动都是复制一份**新副本**（临时目录名每次不同），站点存在客户端（localStorage/IndexedDB）里的**同意状态**（Terms & Conditions Accept、Cookie 横幅、引导页完成标记）从「未同意」重新开始。用户手动点过的 Accept 若存进了后来被 `pkill` 掉的临时实例，就白费——下次启动又是新副本，弹窗复现。因此：有状态弹窗应在**同一实例内**处理（配合坐标点击），尽量一次会话跑完所有依赖该同意的 case；**不要遇阻就 `close --all` + `pkill` 重开**当万能药，重启只用于残留进程污染。
+
 | 二进制 | macOS Keychain 加密项 |
 |---|---|
 | 真实 Google Chrome | `Chrome Safe Storage` |
@@ -234,6 +239,7 @@ agent-browser --session tple get url                # 验证连接可用
 
 ```
 ensureLoggedIn / preparePage     # 录外：open + wait，页面完全就位
+record stop                      # 防御性：幂等，无录制时返回 No recording in progress 不报错
 record start path.webm
 writeToken（eval 写 localStorage）# ⚠️ 录中不要 open，会断帧捕获
 actions（点击/填表；页间移动用 click 链接或 back）+ agent-browser wait
@@ -242,6 +248,8 @@ record stop
 ffprobe duration → ≥4s 且体积 ≥50KB 采用；否则按下方重试；仍短再分镜回退
 ```
 
+**防御性 `record stop`（每 case 开头必加）**：被用户中断的 `record start` 不会自动收尾，残留的录制状态会让下一次 `record start` 报 `Recording already active`，最终 `stop` 产出上百秒的空壳长视频（实测 165.3s）。`record stop` 无录制时返回 `No recording in progress`、不报错，开头兜底一次无副作用。
+
 ⚠️ **0.26.0 录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本必产出空视频。登录态写回用 `eval`，不用 `open` 刷新。
 
 **短/空 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
@@ -249,6 +257,21 @@ ffprobe duration → ≥4s 且体积 ≥50KB 采用；否则按下方重试；�
 1. `record start` 前页面必须已渲染（open + wait 之后再 start）
 2. webm < 4s 或体积异常小（如 ~20KB）→ **先清理残留进程（见上，含 `close --all`），重试一次原生**
 3. 重试后仍短 → 分镜回退，并在 logCase notes 或日志里标明「分镜回退」
+
+**录中点击回退：轮询 eval 点击（SPA 重挂载场景）**
+
+`record start`（视口/焦点事件）会触发部分 SPA（React 等）重渲染、DOM 重建：录前 eval/snapshot 能定位的元素在录中「消失」，ref 几秒内过期，一次性 eval 落空（实测：录前能定位 3 个配置按钮，`record start` 后立刻 eval 全部落空，`record stop` 后又回来）。ref 点击录中失败时改用**轮询 eval 点击**等重挂载完成：
+
+```bash
+# 循环找元素并点击，等重挂载完成后点中（实测第 8~9 次命中，录到 9.6–16.4s 有效视频）
+for i in $(seq 1 30); do
+  ok=$(agent-browser --session tple eval "(() => { const el = document.querySelector('<selector>'); if (!el) return ''; el.click(); return 'ok'; })()")
+  [ "$ok" = "ok" ] && break
+  agent-browser --session tple wait 200
+done
+```
+
+要点：这是**录中**允许的等待方式（`agent-browser wait`），别用 shell `sleep`；命中后照常做点击后效果验证；仍点不中再回基本事实（截图看状态），不要急着停录/重启。
 
 
 ```js
@@ -307,8 +330,9 @@ purgeAgentBrowser()
 beginCase(id)          # purge + 新 session
 ensureLoggedIn()       # 录外；缓存 token
 preparePage(url)       # 录外：open + wait，页面完全就位
+record stop            # 防御性：幂等，清掉被中断录制的残留状态（否则 start 报 Recording already active）
 record start webm
-writeToken via eval    # ⚠️ 录中不 open（断帧）；页间移动用 click 链接 / back
+writeToken via eval    # ⚠️ 录中不 open（断帧）；页间移动用 click 链接 / back；ref 失败改轮询 eval 点击
 actions() + shot("end") + dwell(2000)
 record stop → ffprobe → native or slideshow
 close + logCase

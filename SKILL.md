@@ -242,6 +242,7 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 - **选项 C 必须先预检**：走「用户真实浏览器」分支时，先做一次普通调用完成权限握手（首次连接 Chrome 弹「允许远程控制」，用户确认一次后不再出现），**确认后再进录屏/轮询主流程**。严禁用 `--auto-connect` 重试循环等就绪——M136+ 下发现不了端口，且每次失败都自动拉起浏览器，权限确认框会连弹打断用户
 - 选定登录态后，先在目标站验证登录成功（可观察信号：用户头像元素 / 登录态 cookie / 跳转后的 URL）再进 Step 3；验证不过就回报用户，不带病开跑
 - **不要用 `--auto-connect` + `state save` 导出 cookie 来复用登录态**：那是 browser 级 `Network.getAllCookies`，多 profile 场景会把所有 profile 的 cookie 混在一起，同站点 cookie 互相覆盖，登录态归属不可控（见反模式表）
+- **站点有强同意弹窗（Terms & Conditions / Cookie 横幅等）时，默认提示用户**：「弹窗同意状态存在客户端存储、绑定当前 profile 副本；`--profile <名字>` 每次启动会重新复制新副本，同意状态从『未同意』重置。尽量一次会话跑完所有需要该同意的 case，有状态弹窗在同一实例内处理，不要遇阻就重启浏览器。」
 - 报告 env 里注明所用登录态，如：`登录态：复用本地 Chrome profile "working"` / `登录态：headed 手动登录` / `未登录态`
 
 【调研模式】同一决策门闩：无凭据且用户不选 A/B/C 时，维持原行为——只走公开路径，并在报告 lede/env 标注「未登录态调研」。用户选择复用/手动登录/连接真实浏览器后按选项 A/B/C 执行，登录态同样不落报告正文。
@@ -258,10 +259,12 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 
 1. 录前完成登录 / 导航准备（可用 API token + `localStorage`）
 2. **录前把页面完全就位**：`open <url>` + `wait` 等渲染完成。⚠️ **0.26.0 中录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本**必产出空视频**，不要照做
-3. `record start <path.webm>`
+3. **防御性 `record stop`（幂等：无录制时返回 `No recording in progress` 不报错）→ `record start <path.webm>`**。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `stop` 产出上百秒空壳长视频——每 case 开头先兜底 stop 一次
 4. 登录态需写回 token 时用 `eval` 写 localStorage（**不用 `open` 刷新页面**）；操作只做点击/填表，页间移动用**点击链接**（`click @ref`）或 `back`；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
 5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
 6. 立刻 `ffprobe`：duration **≥ 4s** 且**体积正常（≥50KB 级）**则转 mp4 采用；**短/空（<4s 或体积异常小）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退
+
+**录中点击回退（SPA 因 `record start` 重挂载）**：`record start`（视口/焦点事件）可能触发 React 等 SPA 重渲染、DOM 重建——录前有效的 ref/eval 全部落空（元素「消失」、ref 几秒内过期）。ref 点击录中失败时改**轮询 eval 点击**：循环 ≤30 次 `{ eval 找元素；找到就 click；等 200ms }`，等重挂载完成后点中（实测第 8~9 次命中）。不要因此停止录制或重启浏览器。代码见 [reference.md](reference.md)「原生 record 成功契约」
 
 ```bash
 # 录后验收
@@ -312,6 +315,10 @@ agent-browser click @ref        # 或鼠标坐标点击
 **点击后必须验证效果，不能信 `✓ Done`：** 截图确认状态、或确认 URL/DOM 变化、或查目标 API 是否产生记录。
 
 **已知坑：CSS 选择器 click 会在部分页面静默落空**（0.26.0 实测：the-internet 的 add_remove 页，`click "button[onclick=...]"` 连 JS `.click()` 都不触发 inline onclick，返回 `✓ Done` 但 DOM 不变）。**优先用 snapshot ref 点击**（`snapshot -i` 拿 `@e3` 再 `click @ref`）；CSS 选择器点击后若效果验证不过，改 ref 点击重试，不要先怀疑页面/风控。
+
+**已知坑：自定义组件只认真实鼠标事件**（实测：TikTok Symphony Creative Studio 的 Terms & Conditions 弹窗，Accept 按钮是自定义元素 `KS-BUTTON`/`KS-MODAL`、class 含 `Ks*`，`el.click()` 返回 "clicked"、snapshot ref 点击也无效——事件绑定校验 `isTrusted`，程序化 click 不触发 React 合成事件）。CSS/ref 点击后效果验证不过、且元素是自定义组件（tagName 带连字符，或类名特征如 `Ks*`）时，改**坐标鼠标点击**：`eval` 拿按钮中心坐标 → `agent-browser mouse move <x> <y>` → `mouse down` → `mouse up`（CDP 可信事件）。不要先怀疑风控。
+
+**已知坑：瞬态菜单（flyout/下拉）在两次命令之间就消失**（实测：Tools → Translate & dub 菜单，点开后的下一次 snapshot 里已不见）。菜单项要点，须在**同一拍**内 `eval` 拿坐标 + 坐标点击；或跳过菜单，直接用已知的目标页 URL 导航（如 `/onboard/<tool>`）。
 
 **连续两次「点击无效果」时，先回到基本事实**（元素在哪、可不可见、点没点上、坐标在不在视口内），不要急着归因到外部系统（风控、反自动化、第三方故障）。从「沉默」里编理论，是最贵的错误。
 
@@ -520,6 +527,9 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 因一次 ~1s 空壳就放弃原生 | 先清理进程，按成功契约重试；仍短再分镜回退 |
 | `record start` 后再 `open` 目标页（0.26.0 断帧捕获，产出空壳 webm） | 录前 open + wait 就位页面再 start；录中只用点击/`back` 移动，token 用 `eval` 写回 |
 | CSS 选择器 `click` 返回 `✓ Done` 就当点上了 | 部分页面会静默落空；点击后验证 DOM/URL 效果，不过就改 snapshot ref 点击重试 |
+| 自定义组件点击无效就归因风控、反复重试 | 元素是自定义组件（tagName 带连字符 / `Ks*` 类名）→ 改坐标鼠标点击：`eval` 拿中心坐标 + `mouse move/down/up`（CDP 可信事件） |
+| 遇阻就重启浏览器（`close --all` + `pkill` 当万能药） | 有状态弹窗（Terms/引导页）在**同一实例内**处理（坐标点击）；`--profile <名字>` 每次启动都重新复制 profile，客户端存储的同意状态从「未同意」重置，用户手动点过的 Accept 白费；重启只用于残留进程污染 |
+| 被中断的录制不管，直接下一次 `record start` | 每 case 开头防御性 `record stop`（幂等）；否则报 `Recording already active`，最终 `stop` 产出上百秒空壳 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
 | 只在聊天里贴 PASS 表 | 产出可打开的 HTML + videos |
