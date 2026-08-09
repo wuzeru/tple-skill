@@ -42,7 +42,7 @@ docs/<slice>-e2e/                 # 或仓库约定目录
 Task Progress:
 - [ ] 0. 模式判定：验收模式（默认）/ 调研模式（见下）
 - [ ] 1. 定 case 清单（有 csv 就筛；没有则按项目总结草案 → 用户确认 → 落盘 csv）
-- [ ] 2. 起环境、确认端口，清理残留 agent-browser，并开 dashboard（结束时 stop）
+- [ ] 2. 起环境、确认端口，清理残留 agent-browser，版本自检（落后仅提示、不阻塞），并开 dashboard（结束时 stop）
 - [ ] 2.5 登录态决策：检测到需登录 → 暂停询问用户（复用本地 Chrome profile / headed 手动登录 / 提供凭据 / 公开路径）
 - [ ] 3. 写 run-cases（原生 record 为主；过短回退分镜）
 - [ ] 4. 跑全量，写 meta.jsonl，用 ffprobe 验视频时长
@@ -179,6 +179,19 @@ node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失
 ```
 
 装完**重跑 `check-env`** 确认全部 ✓，再进入后续步骤。安装失败（无网络 / 无权限 / 目标 web 起不来）才停下来向用户如实报告，不要带病继续，也不要假装检查通过。
+
+**版本自检（非阻塞：落后仅提示，不静默更新、不中止流程）：**
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/check-update.mjs   # 本地版本 vs GitHub 最新 release；24h 内不重复联网；离线/限流静默降级
+```
+
+- 自检**永远退出码 0**：拿不到最新版本（离线/API 限流）不当环境故障，静默跳过继续主流程
+- **落后时向用户提示**（当前 vX.Y.Z / 最新 vA.B.C / 落后版本摘要），让用户选择：更新或跳过。用户确认后才执行更新；跳过则照常继续，**不因未更新而中止 TPLE**
+- **更新须用户明示确认**：`node ~/.claude/skills/tple-skill/scripts/check-update.mjs --apply`。脚本按安装来源自动分流：
+  - **git 安装**（目录含 .git）：先查本地改动——有未提交改动**拒绝拉取只警告**；干净则 `git pull --ff-only`（无法 fast-forward 时报错退出，不硬合并）
+  - **zip 安装**（无 .git）：下载最新 release zip 覆盖安装（保持根级布局、zip 内本就不含 CLAUDE.md）；用户本地新增的文件不受影响。有 license key 的用户可改走 landingpage `/download?license=` 下载后手动覆盖
+- 两种路径更新后脚本都会自动**重跑 `check-env.mjs` 复检依赖**（新版可能引入新依赖）；复检不过再走 install-deps 流程
 
 **可观测性：首次使用 agent-browser 前开 dashboard，套件结束后关掉（必须）：**
 
@@ -494,6 +507,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 ## 质量门槛（完成前自检）
 
 - [ ] 开跑前 / 每 case 前已清理残留 agent-browser（含 `agent-browser close --all`）
+- [ ] 环境阶段跑过 `check-update.mjs` 版本自检；落后时已提示用户并可跳过（未静默更新、未因未更新中止流程；--apply 前经用户确认）
 - [ ] 套件期间 dashboard 开着（首次用 agent-browser 前 `dashboard start`），套件结束后 `dashboard stop`
 - [ ] 检测到需登录时走了 Step 2.5 决策门闩（未静默选路径）；选项 A 所有命令带 `--profile` + `--executable-path`；选项 B 登录成功已验证后再续跑
 - [ ] run-cases.mjs 包含 logCase 函数（同时写 meta.jsonl + runs.json），未用简化版 writeMeta 替代
@@ -514,6 +528,10 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 不要 | 要 |
 |------|-----|
 | 残留 Chrome 不清理就开录 | suite / 每 case 前清理 agent-browser 残留（macOS/Linux `pkill`、Windows PowerShell 按特征杀） |
+| 检测到落后版本就静默自动更新（`--apply` 不经确认直接跑） | 先提示「当前 vX / 最新 vY」让用户选更新或跳过；确认后才执行更新，跳过照常继续 |
+| 未确认就在有本地未提交改动的 skill 仓库上 `git pull` 强拉 | `--apply` 自带脏检查会拒绝；有改动先让用户 commit/stash，或改 zip 覆盖到新目录 |
+| 每次调用 TPLE 都强制联网查版本 / 版本查不到就中止流程 | 24h 缓存不重复联网；离线/限流静默降级继续主流程（自检永远退出码 0） |
+| 因未更新就中止验收 / 把「落后」当环境故障 | 落后只提示；未更新照常跑完本次 TPLE，报告可注明 skill 版本 |
 | 信 `✓ Done` 不验点击效果 | 点击前查元素在不在视口内（不在先 `scrollintoview`），点击后截图/查 URL/查 API 验效果 |
 | 视口外的按钮直接 `click @ref` | 先 `scrollintoview @ref` 再点；ref 点击不自动滚动，视口外点击静默落空 |
 | 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |
@@ -551,3 +569,4 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 - `curl` — check-env 探测目标 web 可达性（macOS/Linux 自带）
 
 运行前检查：`node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>`
+版本自检（非阻塞）：`node ~/.claude/skills/tple-skill/scripts/check-update.mjs`（落后提示 + 确认后 `--apply`）

@@ -17,6 +17,8 @@ skill 的能力：按 case 做端到端录屏验收/产品调研，产出带视�
 # 三个脚本都零 npm 依赖（仅 Node 内置模块），直接 node 执行
 node scripts/check-env.mjs --url <WEB_URL>   # 依赖门闩：node/agent-browser/ffmpeg/ffprobe/目标可达；exit 0 = 齐全
 node scripts/install-deps.mjs [--dry-run]    # 缺啥装啥（npm 装 agent-browser、brew 装 ffmpeg/ffprobe）+ 复检
+node scripts/check-update.mjs [--json|--force]  # 版本自检（24h 缓存、离线降级、永不阻塞，退出码恒 0）
+node scripts/check-update.mjs --apply        # 确认后更新：git 装→脏检查+ff-only pull；zip 装→release zip 覆盖；之后自动复检依赖
 node scripts/build-report.mjs --dir <report-dir> \
   --brand "…" --title "…" --lede "…" --env "…" [--cases cases.json]
 # build-report 生成 index.html 后自动做媒体校验：缺 poster 自动从视频末帧提取；

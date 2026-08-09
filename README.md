@@ -26,6 +26,24 @@ ln -s ~/Documents/skill/tple-skill ~/.cursor/skills/tple-skill
 
 装好后在 Claude Code 或 Cursor 里说 `tple` / `TPLE` / `E2E 录屏验收` 即可触发；产品调研场景说 `调研/研究这个产品` + 给 URL 即进入调研模式。
 
+## 更新
+
+skill 更新 = 指令文档更新，落后版本会带着已修复的反模式/坑继续干活，建议保持最新。
+
+TPLE 流程里 agent 会自动做版本自检（`scripts/check-update.mjs`，24h 内不重复联网、离线静默降级、永不阻塞流程），发现落后会提示你确认后再更新；也可以手动：
+
+```bash
+# 版本自检：当前版本 / 最新版本 / 落后摘要
+node scripts/check-update.mjs          # --json 机器可读；--force 绕过缓存
+
+# 确认后执行更新（按安装方式自动分流）
+node scripts/check-update.mjs --apply
+```
+
+- **git clone 安装**（目录含 `.git`）：`--apply` 会先查本地改动——有未提交改动**拒绝拉取只警告**；干净则 `git pull --ff-only`。或直接 `git pull` 亦可
+- **zip 安装**（无 `.git`）：`--apply` 下载最新 release zip 覆盖安装（根级布局、不含 CLAUDE.md，你本地新增的文件不受影响）；有 license key 的从 landingpage `/download?license=` 下载后解压覆盖即可
+- 两种方式更新后脚本自动重跑 `check-env.mjs` 复检依赖（新版可能引入新依赖）
+
 ## 依赖
 
 - `agent-browser`（浏览器操作 + 录屏）
@@ -45,7 +63,10 @@ tple-skill/
 │   ├── report.html       # 报告壳模板（侧栏 + main + lightbox）
 │   └── case-section.html # 单 case 区块模板
 ├── scripts/
-│   └── build-report.mjs  # 报告生成器（读 meta.jsonl → 内联 CSS → index.html）
+│   ├── build-report.mjs  # 报告生成器（读 meta.jsonl → 内联 CSS → index.html）
+│   ├── check-env.mjs     # 环境依赖门闩（node/agent-browser/ffmpeg/ffprobe/目标可达）
+│   ├── install-deps.mjs  # 缺啥装啥 + 复检
+│   └── check-update.mjs  # 版本自检与更新（零依赖、24h 缓存、离线降级）
 └── README.md
 ```
 
