@@ -1,0 +1,65 @@
+{
+  "11-selfcheck-git": {
+    "uc": "AC-1",
+    "steps": "一次性克隆 wuzeru/tple-skill → git checkout v0.0.5（制造落后）→ 拷入被测脚本 scripts/check-update.mjs → 运行 node scripts/check-update.mjs --force",
+    "expected": "输出当前 v0.0.5 / 最新 v0.0.7 / ⚠ 落后提示 + 落后版本提交摘要；退出码 0"
+  },
+  "12-json-cache": {
+    "uc": "AC-2",
+    "steps": "在同一 fixture：先 node scripts/check-update.mjs --json → 再跑一次普通自检 node scripts/check-update.mjs",
+    "expected": "JSON 含 current=v0.0.5 / latest=v0.0.7 / behind=true / installType=git；第二次 latest 来源显示 cache（24h 缓存命中）；两次退出码 0"
+  },
+  "13-offline-degrade": {
+    "uc": "AC-3",
+    "steps": "用坏代理（https_proxy=http://127.0.0.1:1）强制 GitHub API 与 git ls-remote 全部失败 → node scripts/check-update.mjs --force",
+    "expected": "输出「无法获取（离线或限流）——不阻塞流程」；无报错堆栈；退出码 0（永不阻塞）"
+  },
+  "14-git-dirty-refuse": {
+    "uc": "AC-4",
+    "steps": "记录当前 HEAD → 给已追踪文件 README.md 追加一行制造未提交改动 → node scripts/check-update.mjs --apply → 再读 HEAD 对比",
+    "expected": "列出改动并拒绝拉取；退出码 1；HEAD 前后一致（未被强拉）"
+  },
+  "15-git-apply-ff": {
+    "uc": "AC-5",
+    "steps": "裸仓模拟远端（含 2 个新提交）→ clone 出安装目录并 reset 到落后 1 提交（工作树干净）→ node scripts/check-update.mjs --apply",
+    "expected": "git pull --ff-only 成功、HEAD 前进到最新、自动重跑 check-env 复检依赖通过；退出码 0"
+  },
+  "16-zip-apply": {
+    "uc": "AC-6",
+    "steps": "搭 zip 形态安装目录（VERSION=v0.0.5、无 .git、含本地附加文件 MY-NOTES.md）→ node scripts/check-update.mjs --apply → 核验覆盖结果",
+    "expected": "下载 v0.0.7 release zip 覆盖；VERSION 变 v0.0.7；无 CLAUDE.md（根级布局）；本地附加文件保留；复检依赖通过；退出码 0"
+  },
+  "17-update-route": {
+    "uc": "AC-7",
+    "steps": "真实 agent 链路实测（用户要求：用 opencode web 测试）：① 项目 fixture /tmp/tple-oc17 挂 .opencode/skill/tple-skill（远端裸仓领先 5 提交，本地钉 v0.0.5、树干净、未追踪脚本副本）；② opencode serve --port 4567（web UI 同端口）建会话，API 发送「/tple-skill update」；③ opencode agent（litellm/qwen3.7-plus）读 SKILL.md 路由并执行更新；④ 外部事实核验（git HEAD/describe/落后数/文件在位/树状态，不读 agent 自报）；⑤ agent-browser 原生 record 录制 opencode web 会话页",
+    "expected": "agent 按 SKILL.md 路由执行（不进入常规 TPLE 步骤）；落后检出并 ff-only 更新成功；外部核验 HEAD 前进到远端最新、落后 0、路由与脚本文件在位、工作树干净；会话页可回放全过程",
+    "bug": "fixture 的未追踪 check-update.mjs 副本让 --apply 脏检查拒绝（脚本按设计拒拉）；agent 首轮 stash 未含未追踪文件导致 pull 冲突；录制时 record start 触发 SPA 重挂载、滚动容器引用丢失且停在底部",
+    "fix": "agent 自主诊断：stash --include-untracked → pull 冲突 → 删未追踪副本 → ff-only 成功 → stash pop 恢复副本（路由目标达成）；录内自愈 eval 重取滚动容器 + 录内归零",
+    "fixLog": [
+      {
+        "round": 1,
+        "bug": "fixture reset 把脚本提交回退掉（首轮终端回放版）",
+        "fix": "脚本提交 + dummy 提交推远端后再 reset",
+        "files": [
+          "docs/issue-13-check-update-e2e/run-cases.mjs"
+        ]
+      },
+      {
+        "round": 2,
+        "bug": "record start 触发 SPA 重挂载，滚动容器引用丢失且停在底部",
+        "fix": "自愈 eval 重取容器 + 录内归零",
+        "files": [
+          "(录制 harness)"
+        ]
+      },
+      {
+        "round": 3,
+        "bug": "opencode agent 遇 --apply 拒拉 + 未追踪副本冲突（fixture 脏路径）",
+        "fix": "agent 自主 stash/删副本/pull/pop 恢复并达成更新；如实记录 release v0.0.8 与本地 tag 差异",
+        "files": [
+          "(被测 agent 行为，非代码修复)"
+        ]
+      }
+    ]
+  }
+}

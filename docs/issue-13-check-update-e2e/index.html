@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Issue #13 版本自检与自更新 端到端录屏验收</title>
+  <style>
+:root {
+  --ink: #1c1917;
+  --muted: #57534e;
+  --line: #e7e5e4;
+  --bg: #f5f5f4;
+  --panel: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --fail: #b91c1c;
+  --fail-bg: #fee2e2;
+  --blocked: #a16207;
+  --blocked-bg: #fef3c7;
+  --observe: #0e7490;
+  --observe-bg: #cffafe;
+  --accent: #9a3412;
+  --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 15px/1.55 var(--font);
+  background:
+    radial-gradient(900px 420px at 0% 0%, #ffedd5 0%, transparent 55%),
+    radial-gradient(800px 380px at 100% 0%, #e7e5e4 0%, transparent 50%),
+    var(--bg);
+}
+.shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+nav {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  padding: 24px 16px 40px; border-right: 1px solid var(--line);
+  background: rgba(255,255,255,.82); backdrop-filter: blur(10px);
+}
+.brand strong { display: block; color: var(--accent); font-size: 18px; }
+.brand span { color: var(--muted); font-size: 12px; }
+.nav-label {
+  margin: 16px 0 8px; font-size: 12px; color: var(--muted);
+}
+.nav-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 8px 10px; margin: 4px 0; border-radius: 10px;
+  color: var(--muted); text-decoration: none; font-size: 13px;
+}
+.nav-item:hover { background: #f5f5f4; color: var(--ink); }
+.nav-item .dot {
+  width: 8px; height: 8px; border-radius: 999px; margin-top: 6px;
+  background: #a8a29e; flex: none;
+}
+.nav-item.pass .dot { background: var(--ok); }
+.nav-item.fail .dot { background: var(--fail); }
+.nav-item.blocked .dot { background: var(--blocked); }
+.nav-item.observe .dot { background: var(--observe); }
+main { padding: 36px 40px 80px; max-width: 1100px; }
+h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: -.02em; }
+.lede { color: var(--muted); margin: 0 0 20px; }
+.summary {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 28px;
+}
+.chip {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  background: #fff; border: 1px solid var(--line);
+}
+.chip.pass { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.chip.fail { background: var(--fail-bg); color: var(--fail); border-color: transparent; }
+.chip.blocked { background: var(--blocked-bg); color: var(--blocked); border-color: transparent; }
+.chip.observe { background: var(--observe-bg); color: var(--observe); border-color: transparent; }
+.case {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 22px; margin: 0 0 18px;
+  box-shadow: 0 1px 0 rgba(28,25,23,.03), 0 12px 28px rgba(28,25,23,.04);
+}
+.case-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.eyebrow {
+  margin: 0; color: var(--muted); font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+h2 { margin: 4px 0 0; font-size: 20px; }
+.run-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.badge {
+  padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+}
+.badge.pass { background: var(--ok-bg); color: var(--ok); }
+.badge.fail { background: var(--fail-bg); color: var(--fail); }
+.badge.blocked { background: var(--blocked-bg); color: var(--blocked); }
+.badge.observe { background: var(--observe-bg); color: var(--observe); }
+.grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 20px; margin-top: 16px; }
+h3 {
+  margin: 14px 0 6px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+p { margin: 0; }
+.notes {
+  font-family: var(--mono); font-size: 12px; background: #fafaf9;
+  border-radius: 10px; padding: 10px 12px; border: 1px solid var(--line);
+}
+video {
+  width: 100%; border-radius: 12px; background: #111; border: 1px solid var(--line);
+  aspect-ratio: 16 / 10; object-fit: contain;
+}
+.shots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+figure { margin: 0; }
+img { width: 100%; border-radius: 10px; border: 1px solid var(--line); background: #fff; }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.shot-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 10px;
+}
+.shot-zoom:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.shot-zoom img { display: block; pointer-events: none; }
+body.lightbox-open { overflow: hidden; }
+.lightbox[hidden] { display: none !important; }
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: rgba(28, 25, 23, .72);
+  cursor: zoom-out;
+}
+.lightbox-panel {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: min(1100px, 96vw);
+  max-height: 92vh;
+  padding: 12px 12px 10px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 60px rgba(28, 25, 23, .28);
+}
+.lightbox-panel img {
+  display: block;
+  width: auto;
+  max-width: min(1060px, 92vw);
+  max-height: calc(92vh - 64px);
+  object-fit: contain;
+  border-radius: 10px;
+  background: #fff;
+}
+.lightbox-panel figcaption {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: #f5f5f4;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:hover { background: #e7e5e4; }
+.fix-log {
+  margin-top: 14px; padding: 12px 14px;
+  background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px;
+}
+.fix-log > h3 { margin: 0 0 10px; color: var(--accent); }
+.fix-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.fix-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.fix-item.bug { border-color: #fecaca; }
+.fix-item.fix { border-color: #bbf7d0; }
+.fix-label {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fix-item.bug .fix-label { color: var(--fail); }
+.fix-item.fix .fix-label { color: var(--ok); }
+.fix-item p { margin: 0; font-size: 13px; line-height: 1.5; }
+.fix-rounds-title { margin: 12px 0 6px; }
+.fix-rounds { margin: 0; padding-left: 1.2rem; font-size: 13px; }
+.fix-rounds li { margin: 8px 0; }
+.fix-kv { display: grid; grid-template-columns: 2.5rem 1fr; gap: 6px; margin-top: 4px; }
+.fix-k { color: var(--muted); font-size: 12px; font-weight: 600; }
+.fix-files { margin-top: 4px; }
+.fix-log code { font-family: var(--mono); font-size: 0.85em; color: var(--muted); }
+.fix-round { font-weight: 600; color: var(--accent); }
+.fix-summary {
+  margin: 14px 0 28px; padding: 10px 14px;
+  background: var(--ok-bg); color: var(--ok); border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+}
+.fix-summary.partial { background: var(--blocked-bg); color: var(--blocked); }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+@media (max-width: 960px) {
+  .shell { grid-template-columns: 1fr; }
+  nav { position: static; height: auto; }
+  .grid, .shots, .fix-pair { grid-template-columns: 1fr; }
+  main { padding: 24px 16px 60px; }
+}
+
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav>
+      <div class="brand">
+        <strong>Issue #13 E2E</strong>
+        <span>按 case 录屏验收</span>
+      </div>
+      <div class="nav-label">CASES</div>
+<a href="#11-selfcheck-git" class="nav-item pass"><span class="dot"></span>11-selfcheck-git · git 安装自检：落后检测 + 摘要</a>
+<a href="#12-json-cache" class="nav-item pass"><span class="dot"></span>12-json-cache · --json 输出与 24h 缓存</a>
+<a href="#13-offline-degrade" class="nav-item pass"><span class="dot"></span>13-offline-degrade · 离线静默降级（永不阻塞）</a>
+<a href="#14-git-dirty-refuse" class="nav-item pass"><span class="dot"></span>14-git-dirty-refuse · --apply 拒绝脏 git 仓库</a>
+<a href="#15-git-apply-ff" class="nav-item pass"><span class="dot"></span>15-git-apply-ff · --apply 干净 git 安装：ff-only 成功 + 复检</a>
+<a href="#16-zip-apply" class="nav-item pass"><span class="dot"></span>16-zip-apply · --apply zip 安装：覆盖保持根级布局</a>
+<a href="#17-update-route" class="nav-item pass"><span class="dot"></span>17-update-route · /tple-skill update 路由：opencode web 真实执行更新</a>
+    </nav>
+    <main>
+      <h1>Issue #13 端到端录屏验收：check-update.mjs 与 /tple-skill update 路由</h1>
+      <p class="lede">覆盖 issue #13 全部验收标准 + update 路由：自检（落后检测+摘要）/--json+24h 缓存/离线降级/git 脏拒拉/git ff-only 更新/zip 覆盖更新/「/tple-skill update」路由（第 17 case 按用户要求改用 opencode web 真实 agent 链路实测，含 agent 自主处理未追踪副本拒拉的全过程）。来源：依据 Issue #13 验收标准与本分支 diff 总结 6 条 case 经用户确认；路由 case（17）由用户明示追加，均写入 docs/user-cases.csv（11–17）</p>
+      <p class="meta">生成时间 2026-08-09T06:26:47.196Z · 被测：scripts/check-update.mjs 与 SKILL.md 参数路由（v0.0.7-3-g1b4cabf，PR #17）· case 17：opencode serve 1.14.48 web UI :4567 + litellm/qwen3.7-plus（期间 GitHub release 推进至 v0.0.8，main 另有 PR#15/#16 合入）· fixture 于 /tmp/tple-issue13、/tmp/tple-oc17 · 登录态：无需</p>
+      <p class="meta">录屏方式：case 11–16 终端实况回放（命令真跑、输出真捕获，agent-browser 原生 record 回放页）；case 17 录制 opencode web 会话页（原生 record 13.1s/345KB，录中 SPA 重挂载用自愈 eval 重取滚动容器）；13-offline-degrade 静态页压线回退分镜</p>
+      <div class="summary">
+        <span class="chip pass">PASS 7</span>
+        <span class="chip fail">FAIL 0</span>
+        <span class="chip blocked">BLOCKED 0</span>
+
+        <span class="chip">合计 7</span>
+      </div>
+<div class="fix-summary">自动修复 1 个 FAIL（3 轮）</div>
+<section class="case" id="11-selfcheck-git">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-1 · 11-selfcheck-git</p>
+      <h2>git 安装自检：落后检测 + 摘要</h2>
+      <p class="run-meta">最后跑 2026-08-09 13:26 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>一次性克隆 wuzeru/tple-skill → git checkout v0.0.5（制造落后）→ 拷入被测脚本 scripts/check-update.mjs → 运行 node scripts/check-update.mjs --force</p>
+      <h3>期望</h3>
+      <p>输出当前 v0.0.5 / 最新 v0.0.7 / ⚠ 落后提示 + 落后版本提交摘要；退出码 0</p>
+      <h3>结果备注</h3>
+      <p class="notes">exit=0；当前 v0.0.5 / 最新 v0.0.7 / 落后摘要 均输出=true（GitHub API 真实对比）；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/11-selfcheck-git.png">
+        <source src="videos/11-selfcheck-git.mp4" type="video/mp4" />
+        <source src="videos/11-selfcheck-git.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/11-selfcheck-git.png" data-caption="结束帧 · 11-selfcheck-git" aria-label="放大结束帧">
+            <img src="videos/11-selfcheck-git.png" alt="11-selfcheck-git screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="12-json-cache">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-2 · 12-json-cache</p>
+      <h2>--json 输出与 24h 缓存</h2>
+      <p class="run-meta">最后跑 2026-08-09 13:27 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>在同一 fixture：先 node scripts/check-update.mjs --json → 再跑一次普通自检 node scripts/check-update.mjs</p>
+      <h3>期望</h3>
+      <p>JSON 含 current=v0.0.5 / latest=v0.0.7 / behind=true / installType=git；第二次 latest 来源显示 cache（24h 缓存命中）；两次退出码 0</p>
+      <h3>结果备注</h3>
+      <p class="notes">--json exit=0 字段(current/latest/behind/installType)正确=true；第二次缓存命中=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/12-json-cache.png">
+        <source src="videos/12-json-cache.mp4" type="video/mp4" />
+        <source src="videos/12-json-cache.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/12-json-cache.png" data-caption="结束帧 · 12-json-cache" aria-label="放大结束帧">
+            <img src="videos/12-json-cache.png" alt="12-json-cache screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="13-offline-degrade">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-3 · 13-offline-degrade</p>
+      <h2>离线静默降级（永不阻塞）</h2>
+      <p class="run-meta">最后跑 2026-08-09 13:27 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>用坏代理（https_proxy=http://127.0.0.1:1）强制 GitHub API 与 git ls-remote 全部失败 → node scripts/check-update.mjs --force</p>
+      <h3>期望</h3>
+      <p>输出「无法获取（离线或限流）——不阻塞流程」；无报错堆栈；退出码 0（永不阻塞）</p>
+      <h3>结果备注</h3>
+      <p class="notes">exit=0；降级提示输出=true；无堆栈报错（永不阻塞契约）；录屏：分镜回退 6.4s（终端实况回放：命令真跑、输出真捕获）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/13-offline-degrade.png">
+        <source src="videos/13-offline-degrade.mp4" type="video/mp4" />
+        <source src="videos/13-offline-degrade.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/13-offline-degrade.png" data-caption="结束帧 · 13-offline-degrade" aria-label="放大结束帧">
+            <img src="videos/13-offline-degrade.png" alt="13-offline-degrade screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="14-git-dirty-refuse">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-4 · 14-git-dirty-refuse</p>
+      <h2>--apply 拒绝脏 git 仓库</h2>
+      <p class="run-meta">最后跑 2026-08-09 13:28 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>记录当前 HEAD → 给已追踪文件 README.md 追加一行制造未提交改动 → node scripts/check-update.mjs --apply → 再读 HEAD 对比</p>
+      <h3>期望</h3>
+      <p>列出改动并拒绝拉取；退出码 1；HEAD 前后一致（未被强拉）</p>
+      <h3>结果备注</h3>
+      <p class="notes">exit=1（期望 1）；拒绝强拉提示=true；HEAD 未动=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/14-git-dirty-refuse.png">
+        <source src="videos/14-git-dirty-refuse.mp4" type="video/mp4" />
+        <source src="videos/14-git-dirty-refuse.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/14-git-dirty-refuse.png" data-caption="结束帧 · 14-git-dirty-refuse" aria-label="放大结束帧">
+            <img src="videos/14-git-dirty-refuse.png" alt="14-git-dirty-refuse screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="15-git-apply-ff">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-5 · 15-git-apply-ff</p>
+      <h2>--apply 干净 git 安装：ff-only 成功 + 复检</h2>
+      <p class="run-meta">最后跑 2026-08-09 13:28 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>裸仓模拟远端（含 2 个新提交）→ clone 出安装目录并 reset 到落后 1 提交（工作树干净）→ node scripts/check-update.mjs --apply</p>
+      <h3>期望</h3>
+      <p>git pull --ff-only 成功、HEAD 前进到最新、自动重跑 check-env 复检依赖通过；退出码 0</p>
+      <h3>结果备注</h3>
+      <p class="notes">exit=0；ff-only 成功=true；check-env 复检=true；HEAD 已前进到远端最新=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/15-git-apply-ff.png">
+        <source src="videos/15-git-apply-ff.mp4" type="video/mp4" />
+        <source src="videos/15-git-apply-ff.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/15-git-apply-ff.png" data-caption="结束帧 · 15-git-apply-ff" aria-label="放大结束帧">
+            <img src="videos/15-git-apply-ff.png" alt="15-git-apply-ff screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="16-zip-apply">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-6 · 16-zip-apply</p>
+      <h2>--apply zip 安装：覆盖保持根级布局</h2>
+      <p class="run-meta">最后跑 2026-08-09 13:28 · 共跑 1 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>搭 zip 形态安装目录（VERSION=v0.0.5、无 .git、含本地附加文件 MY-NOTES.md）→ node scripts/check-update.mjs --apply → 核验覆盖结果</p>
+      <h3>期望</h3>
+      <p>下载 v0.0.7 release zip 覆盖；VERSION 变 v0.0.7；无 CLAUDE.md（根级布局）；本地附加文件保留；复检依赖通过；退出码 0</p>
+      <h3>结果备注</h3>
+      <p class="notes">exit=0；VERSION=v0.0.7 fe0b092 2026-08-09T03:58:18Z；无 CLAUDE.md=true；本地附加文件保留=true；check-env 复检=true；录屏：原生 record 8.2s（终端实况回放：命令真跑、输出真捕获）</p>
+
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/16-zip-apply.png">
+        <source src="videos/16-zip-apply.mp4" type="video/mp4" />
+        <source src="videos/16-zip-apply.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/16-zip-apply.png" data-caption="结束帧 · 16-zip-apply" aria-label="放大结束帧">
+            <img src="videos/16-zip-apply.png" alt="16-zip-apply screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="case" id="17-update-route">
+  <header class="case-head">
+    <div>
+      <p class="eyebrow">AC-7 · 17-update-route</p>
+      <h2>/tple-skill update 路由：opencode web 真实执行更新</h2>
+      <p class="run-meta">最后跑 2026-08-09 14:26 · 共跑 3 次</p>
+    </div>
+    <span class="badge pass">PASS</span>
+  </header>
+  <div class="grid">
+    <div>
+      <h3>步骤</h3>
+      <p>真实 agent 链路实测（用户要求：用 opencode web 测试）：① 项目 fixture /tmp/tple-oc17 挂 .opencode/skill/tple-skill（远端裸仓领先 5 提交，本地钉 v0.0.5、树干净、未追踪脚本副本）；② opencode serve --port 4567（web UI 同端口）建会话，API 发送「/tple-skill update」；③ opencode agent（litellm/qwen3.7-plus）读 SKILL.md 路由并执行更新；④ 外部事实核验（git HEAD/describe/落后数/文件在位/树状态，不读 agent 自报）；⑤ agent-browser 原生 record 录制 opencode web 会话页</p>
+      <h3>期望</h3>
+      <p>agent 按 SKILL.md 路由执行（不进入常规 TPLE 步骤）；落后检出并 ff-only 更新成功；外部核验 HEAD 前进到远端最新、落后 0、路由与脚本文件在位、工作树干净；会话页可回放全过程</p>
+      <h3>结果备注</h3>
+      <p class="notes">opencode serve 1.14.48（web UI :4567）+ litellm/qwen3.7-plus：会话收到 /tple-skill update → agent 按 SKILL.md 路由执行 --force 检出落后（v0.0.5，落后 5 提交）→ --apply 因未追踪副本被拒后自主诊断（stash→pull→stash pop 处理冲突后 rm 副本 ff-only）→ HEAD=1b4cabf=远端 main 最新、describe v0.0.7-3、落后 0、路由+脚本在位、树干净（外部 git 核验，不读自报）；期间 GitHub release 推进至 v0.0.8（main 另有 PR#15/#16 合入，159dc12），agent 如实记录 release 与 tag 差异；会话页 agent-browser 原生 record 13.1s/345KB</p>
+<div class="fix-log">
+      <h3>修复说明</h3>
+      <div class="fix-pair">
+        <div class="fix-item bug">
+          <span class="fix-label">Bug 点</span>
+          <p>fixture 的未追踪 check-update.mjs 副本让 --apply 脏检查拒绝（脚本按设计拒拉）；agent 首轮 stash 未含未追踪文件导致 pull 冲突；录制时 record start 触发 SPA 重挂载、滚动容器引用丢失且停在底部</p>
+        </div>
+        <div class="fix-item fix">
+          <span class="fix-label">修复方案</span>
+          <p>agent 自主诊断：stash --include-untracked → pull 冲突 → 删未追踪副本 → ff-only 成功 → stash pop 恢复副本（路由目标达成）；录内自愈 eval 重取滚动容器 + 录内归零</p>
+        </div>
+      </div>
+      <h3 class="fix-rounds-title">修复轮次</h3><ol class="fix-rounds"><li>
+              <span class="fix-round">Round 1</span>
+              <div class="fix-kv"><span class="fix-k">Bug</span><span>fixture reset 把脚本提交回退掉（首轮终端回放版）</span></div>
+              <div class="fix-kv"><span class="fix-k">修复</span><span>脚本提交 + dummy 提交推远端后再 reset</span></div>
+              <div class="fix-files"><code>docs/issue-13-check-update-e2e/run-cases.mjs</code></div>
+            </li>
+<li>
+              <span class="fix-round">Round 2</span>
+              <div class="fix-kv"><span class="fix-k">Bug</span><span>record start 触发 SPA 重挂载，滚动容器引用丢失且停在底部</span></div>
+              <div class="fix-kv"><span class="fix-k">修复</span><span>自愈 eval 重取容器 + 录内归零</span></div>
+              <div class="fix-files"><code>(录制 harness)</code></div>
+            </li>
+<li>
+              <span class="fix-round">Round 3</span>
+              <div class="fix-kv"><span class="fix-k">Bug</span><span>opencode agent 遇 --apply 拒拉 + 未追踪副本冲突（fixture 脏路径）</span></div>
+              <div class="fix-kv"><span class="fix-k">修复</span><span>agent 自主 stash/删副本/pull/pop 恢复并达成更新；如实记录 release v0.0.8 与本地 tag 差异</span></div>
+              <div class="fix-files"><code>(被测 agent 行为，非代码修复)</code></div>
+            </li></ol>
+    </div>
+    </div>
+    <div class="media">
+      <h3>录屏</h3>
+      <video controls playsinline preload="metadata" poster="videos/17-update-route.png">
+        <source src="videos/17-update-route.mp4" type="video/mp4" />
+        <source src="videos/17-update-route.webm" type="video/webm" />
+      </video>
+      <h3>关键帧截图</h3>
+      <div class="shots">
+        <figure>
+          <button type="button" class="shot-zoom" data-full="videos/17-update-route.png" data-caption="结束帧 · 17-update-route" aria-label="放大结束帧">
+            <img src="videos/17-update-route.png" alt="17-update-route screenshot" />
+          </button>
+          <figcaption>结束帧 · 点击放大</figcaption>
+        </figure>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="lightbox-backdrop" data-lightbox-close aria-label="关闭放大"></button>
+    <figure class="lightbox-panel" role="dialog" aria-modal="true" aria-label="关键帧放大">
+      <button type="button" class="lightbox-close" data-lightbox-close aria-label="关闭">×</button>
+      <img id="lightbox-img" alt="" />
+      <figcaption id="lightbox-caption"></figcaption>
+    </figure>
+  </div>
+
+  <script>
+    (() => {
+      const box = document.getElementById("lightbox");
+      const img = document.getElementById("lightbox-img");
+      const cap = document.getElementById("lightbox-caption");
+      if (!box || !img) return;
+
+      function openLightbox(src, caption) {
+        img.src = src;
+        img.alt = caption || "";
+        cap.textContent = caption || "";
+        box.hidden = false;
+        document.body.classList.add("lightbox-open");
+      }
+
+      function closeLightbox() {
+        box.hidden = true;
+        img.removeAttribute("src");
+        document.body.classList.remove("lightbox-open");
+      }
+
+      document.addEventListener("click", (event) => {
+        const zoom = event.target.closest(".shot-zoom");
+        if (zoom) {
+          openLightbox(zoom.dataset.full || zoom.querySelector("img")?.src, zoom.dataset.caption || "");
+          return;
+        }
+        if (event.target.closest("[data-lightbox-close]")) closeLightbox();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !box.hidden) closeLightbox();
+      });
+    })();
+  </script>
+</body>
+</html>
