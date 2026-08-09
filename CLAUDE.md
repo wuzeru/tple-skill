@@ -19,6 +19,7 @@ node scripts/check-env.mjs --url <WEB_URL>   # 依赖门闩：node/agent-browser
 node scripts/install-deps.mjs [--dry-run]    # 缺啥装啥（npm 装 agent-browser、brew 装 ffmpeg/ffprobe）+ 复检
 node scripts/check-update.mjs [--json|--force]  # 版本自检（24h 缓存、离线降级、永不阻塞，退出码恒 0）
 node scripts/check-update.mjs --apply        # 确认后更新：git 装→脏检查+ff-only pull；zip 装→release zip 覆盖；之后自动复检依赖
+# 用户在 Agent 里输 /tple-skill update：SKILL.md「参数路由」直接走更新流程（check-update --force → --apply），不进常规 TPLE 步骤
 node scripts/build-report.mjs --dir <report-dir> \
   --brand "…" --title "…" --lede "…" --env "…" [--cases cases.json]
 # build-report 生成 index.html 后自动做媒体校验：缺 poster 自动从视频末帧提取；

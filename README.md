@@ -30,7 +30,15 @@ ln -s ~/Documents/skill/tple-skill ~/.cursor/skills/tple-skill
 
 skill 更新 = 指令文档更新，落后版本会带着已修复的反模式/坑继续干活，建议保持最新。
 
-TPLE 流程里 agent 会自动做版本自检（`scripts/check-update.mjs`，24h 内不重复联网、离线静默降级、永不阻塞流程），发现落后会提示你确认后再更新；也可以手动：
+**最简单的更新方式：在 Claude Code / Cursor 里直接说**
+
+```
+/tple-skill update
+```
+
+agent 会检查最新版本并直接执行更新（git 安装 → ff-only pull；zip 安装 → 下载 release zip 覆盖），更新后自动复检依赖并报告结果；被脏工作区等情况拒绝时会如实告知并给处理选项，不强拉。
+
+TPLE 流程里 agent 也会自动做版本自检（`scripts/check-update.mjs`，24h 内不重复联网、离线静默降级、永不阻塞流程），发现落后会提示你确认后再更新；也可以手动跑脚本：
 
 ```bash
 # 版本自检：当前版本 / 最新版本 / 落后摘要
@@ -43,6 +51,8 @@ node scripts/check-update.mjs --apply
 - **git clone 安装**（目录含 `.git`）：`--apply` 会先查本地改动——有未提交改动**拒绝拉取、列出改动并以退出码 1 报错**（不强拉）；干净则 `git pull --ff-only`。或直接 `git pull` 亦可
 - **zip 安装**（无 `.git`）：`--apply` 下载最新 release zip 覆盖安装（根级布局、不含 CLAUDE.md，你本地新增的文件不受影响）；有 license key 的从 landingpage `/download?license=` 下载后解压覆盖即可
 - 两种方式更新后脚本自动重跑 `check-env.mjs` 复检依赖（新版可能引入新依赖）
+
+> 注：`/tple-skill update` 依赖本 README 所在版本的 SKILL.md 路由约定；更老的已安装版本还没有这个入口，老版本请先手动 `git pull`（git 安装）或重新下载 zip 覆盖（zip 安装）一次，之后即可用 `/tple-skill update`。
 
 ## 依赖
 

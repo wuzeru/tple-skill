@@ -20,6 +20,23 @@ description: >-
 - **验收模式**（默认）：有代码、有仓库，按 case 录屏验收，FAIL 走 auto-fix 改代码重测。
 - **调研模式**（产品调研）：只给网址、无代码，agent 探索站点后出 case 草案，逐 case 录屏产出**调研报告**。**禁止修改目标站任何东西**；走不通的路径记为发现/限制，不进 auto-fix。模式判定见 Step 0。
 
+## 参数路由：`update`（自更新，优先于一切步骤）
+
+调用参数（ARGUMENTS）含 `update` / `更新` / `升级` → **进入更新流程，跳过常规 TPLE 全部步骤**（不做模式判定、不定 case、不开录屏；用户的 update 调用本身就是更新意图，无需再次确认）：
+
+```bash
+node ~/.claude/skills/tple-skill/scripts/check-update.mjs --force   # 绕过 24h 缓存，拿真实的最新版本
+```
+
+按输出分支处理：
+
+- **已是最新** → 报告「已是最新 vX.Y.Z」，结束
+- **落后** → 直接执行 `node ~/.claude/skills/tple-skill/scripts/check-update.mjs --apply`（脚本按安装来源自动分流：git → 脏检查 + `git pull --ff-only`；zip → 下载最新 release zip 覆盖，根级布局；更新后脚本自动重跑 `check-env.mjs` 复检依赖），然后报告「vX.Y.Z → vA.B.C + 复检结果」
+- **`--apply` 被拒绝**（脏工作区 / detached HEAD / 无法 fast-forward / 下载失败，脚本退出码 1）→ 把脚本的报错与改动清单**如实转告用户**并给选项：commit / stash 后重试；detached HEAD 先 `git checkout` 回主分支；或手动下载 zip 覆盖。**不得强拉、不得静默换更新方式**
+- **离线 / 限流**（拿不到最新版本）→ 告知「当前无法获取最新版本（网络原因），稍后重试」，退出码 0，不当失败
+
+更新流程**在报告结果后结束**，不继续 TPLE 验收/调研。无 update 参数时走下方正常流程（Step 2 环境阶段另有非阻塞版本自检，落后只提示不自动更新）。
+
 ## 交付物
 
 ```
