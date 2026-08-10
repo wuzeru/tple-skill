@@ -2,7 +2,7 @@
 
 **TPLE** = Test-Proof-Lifecycle-Engineering — 按 case 端到端录屏验收，生成带视频证据的 HTML 报告。
 
-一个 Claude Code / Cursor skill，不是独立应用。
+一个 skill（Claude Code / Cursor 及任何支持 SKILL.md 约定的 agent 均可），不是独立应用。
 
 ## 它能做什么
 
@@ -15,22 +15,26 @@
 
 ## 安装
 
+skill 本体位置无关：所有脚本自定位（`scripts/*.mjs` 以自身位置解析），SKILL.md 内脚本调用一律按 `$SKILL_DIR`（SKILL.md 所在目录）约定引用。因此安装只做一件事——**把本目录放进你的 agent 的 skill 扫描路径**（或等价位置）。
+
 ```bash
 # 1. clone
 git clone https://github.com/wuzeru/tple-skill.git ~/Documents/skill/tple-skill
 
-# 2. 建软链（Claude Code + Cursor）
+# 2. 建软链（Claude Code + Cursor 示例）
 ln -s ~/Documents/skill/tple-skill ~/.claude/skills/tple-skill
 ln -s ~/Documents/skill/tple-skill ~/.cursor/skills/tple-skill
 ```
 
-装好后在 Claude Code 或 Cursor 里说 `tple` / `TPLE` / `E2E 录屏验收` 即可触发；产品调研场景说 `调研/研究这个产品` + 给 URL 即进入调研模式。
+**其他 agent**（opencode 等任何支持 SKILL.md skill 约定的）：同理，把本目录（软链或拷贝）放到该 agent 扫描 skill 的目录即可，路径不限；agent 能否自动发现取决于它认不认 SKILL.md 约定，认不了的就按该 agent 自己的方式注册/指向 SKILL.md。
+
+装好后在 agent 里说 `tple` / `TPLE` / `E2E 录屏验收` 即可触发；产品调研场景说 `调研/研究这个产品` + 给 URL 即进入调研模式。
 
 ## 更新
 
 skill 更新 = 指令文档更新，落后版本会带着已修复的反模式/坑继续干活，建议保持最新。
 
-**最简单的更新方式：在 Claude Code / Cursor 里直接说**
+**最简单的更新方式：在 agent 里直接说**
 
 ```
 /tple-skill update

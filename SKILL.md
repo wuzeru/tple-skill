@@ -15,6 +15,8 @@ description: >-
 
 定位：不做 checklist + 截图 markdown 式验收，而是交付**带媒体的按 case 验收站**。
 
+**路径约定**：`SKILL_DIR` = 本 SKILL.md 所在目录（agent 加载本 skill 时所在的路径，与安装位置无关——可能是 Claude Code、Cursor 或任何其他 agent 的 skill 目录）。下文所有脚本调用一律以 `$SKILL_DIR/scripts/...` 为准，执行时按你的实际加载路径解析，**不要硬编码任何特定 agent 的安装路径**。
+
 两种模式：
 
 - **验收模式**（默认）：有代码、有仓库，按 case 录屏验收，FAIL 走 auto-fix 改代码重测。
@@ -25,13 +27,13 @@ description: >-
 调用参数（ARGUMENTS）含 `update` / `更新` / `升级` → **进入更新流程，跳过常规 TPLE 全部步骤**（不做模式判定、不定 case、不开录屏；用户的 update 调用本身就是更新意图，无需再次确认）：
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/check-update.mjs --force   # 绕过 24h 缓存，拿真实的最新版本
+node $SKILL_DIR/scripts/check-update.mjs --force   # 绕过 24h 缓存，拿真实的最新版本
 ```
 
 按输出分支处理：
 
 - **已是最新** → 报告「已是最新 vX.Y.Z」，结束
-- **落后** → 直接执行 `node ~/.claude/skills/tple-skill/scripts/check-update.mjs --apply`（脚本按安装来源自动分流：git → 脏检查 + `git pull --ff-only`；zip → 下载最新 release zip 覆盖，根级布局；更新后脚本自动重跑 `check-env.mjs` 复检依赖），然后报告「vX.Y.Z → vA.B.C + 复检结果」
+- **落后** → 直接执行 `node $SKILL_DIR/scripts/check-update.mjs --apply`（脚本按安装来源自动分流：git → 脏检查 + `git pull --ff-only`；zip → 下载最新 release zip 覆盖，根级布局；更新后脚本自动重跑 `check-env.mjs` 复检依赖），然后报告「vX.Y.Z → vA.B.C + 复检结果」
 - **`--apply` 被拒绝**（脏工作区 / detached HEAD / 无法 fast-forward / 下载失败，脚本退出码 1）→ 把脚本的报错与改动清单**如实转告用户**并给选项：commit / stash 后重试；detached HEAD 先 `git checkout` 回主分支；或手动下载 zip 覆盖。**不得强拉、不得静默换更新方式**
 - **离线 / 限流**（拿不到最新版本）→ 告知「当前无法获取最新版本（网络原因），稍后重试」，退出码 0，不当失败
 
@@ -176,10 +178,10 @@ id,module,title,precondition,steps,expected,priority,status,notes
 **先跑依赖检查（必须，缺依赖先自动安装，装不上再报告用户）：**
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>
+node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>
 # 例如 --url http://localhost:3000；不传 --url 则只查工具不查目标
 # 【调研模式】--url 直接指向目标站点，并加 --mode research
-node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url https://example.com --mode research
+node $SKILL_DIR/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
 检查 node ≥18 / agent-browser / ffmpeg / ffprobe / 目标 web 可达；全部 ✓ 才进入后续步骤。
@@ -189,7 +191,7 @@ node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url https://example.com
 **退出码非 0 时：自动安装缺失工具，装完复检，通过才继续：**
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失清单安装 + 复检
+node $SKILL_DIR/scripts/install-deps.mjs   # 一键：按缺失清单安装 + 复检
 # 或按 check-env 打印的指引手动装：
 #   agent-browser → npm i -g agent-browser && agent-browser install（全平台）
 #   ffmpeg/ffprobe → brew install ffmpeg（macOS/Linux）或 winget install Gyan.FFmpeg（Windows）
@@ -200,12 +202,12 @@ node ~/.claude/skills/tple-skill/scripts/install-deps.mjs   # 一键：按缺失
 **版本自检（非阻塞：落后仅提示，不静默更新、不中止流程）：**
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/check-update.mjs   # 本地版本 vs GitHub 最新 release；24h 内不重复联网；离线/限流静默降级
+node $SKILL_DIR/scripts/check-update.mjs   # 本地版本 vs GitHub 最新 release；24h 内不重复联网；离线/限流静默降级
 ```
 
 - 自检**永远退出码 0**：拿不到最新版本（离线/API 限流）不当环境故障，静默跳过继续主流程
 - **落后时向用户提示**（当前 vX.Y.Z / 最新 vA.B.C / 落后版本摘要），让用户选择：更新或跳过。用户确认后才执行更新；跳过则照常继续，**不因未更新而中止 TPLE**
-- **更新须用户明示确认**：`node ~/.claude/skills/tple-skill/scripts/check-update.mjs --apply`。脚本按安装来源自动分流：
+- **更新须用户明示确认**：`node $SKILL_DIR/scripts/check-update.mjs --apply`。脚本按安装来源自动分流：
   - **git 安装**（目录含 .git）：先查本地改动——有未提交改动**拒绝拉取、列出改动并以退出码 1 报错**（不强拉）；干净则 `git pull --ff-only`（无法 fast-forward 时报错退出，不硬合并）
   - **zip 安装**（无 .git）：下载最新 release zip 覆盖安装（保持根级布局、zip 内本就不含 CLAUDE.md）；用户本地新增的文件不受影响。有 license key 的用户可改走 landingpage `/download?license=` 下载后手动覆盖
 - 两种路径更新后脚本都会自动**重跑 `check-env.mjs` 复检依赖**（新版可能引入新依赖）；复检不过再走 install-deps 流程
@@ -480,7 +482,7 @@ while FAIL count > 0 and round < 3:
 
 ```bash
 # 可选：cases.json 提供 uc/steps/expected
-node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
+node $SKILL_DIR/scripts/build-report.mjs \
   --dir docs/<slice>-e2e \
   --brand "Issue #N E2E" \
   --title "Issue #N 端到端录屏验收" \
@@ -495,7 +497,7 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 **【调研模式】品牌与文案**：brand 用可区分的前缀，如 `--brand "产品调研 · example.com"`；lede 写明来源 URL 与调研范围，未登录时注明：
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
+node $SKILL_DIR/scripts/build-report.mjs \
   --dir docs/research-example.com \
   --brand "产品调研 · example.com" \
   --title "example.com 产品调研报告" \
@@ -597,5 +599,5 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 - Node.js 18+ — run-cases / build-report / check-env 脚本
 - `curl` — check-env 探测目标 web 可达性（macOS/Linux 自带）
 
-运行前检查：`node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>`
-版本自检（非阻塞）：`node ~/.claude/skills/tple-skill/scripts/check-update.mjs`（落后提示 + 确认后 `--apply`）
+运行前检查：`node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>`
+版本自检（非阻塞）：`node $SKILL_DIR/scripts/check-update.mjs`（落后提示 + 确认后 `--apply`）

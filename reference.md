@@ -1,5 +1,7 @@
 # tple-skill — 参考实现
 
+> **路径约定**：下文示例中的 `$SKILL_DIR` = 本 skill 的 SKILL.md 所在目录（随 agent 实际安装位置而定），与 SKILL.md 开头的约定一致。
+
 ## agent-browser 最小命令速查（先看这里，别猜）
 
 ```bash
@@ -379,7 +381,7 @@ function logCase(id, title, status, notes) {
 - `scripts/build-report.mjs`（推荐生成器）
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
+node $SKILL_DIR/scripts/build-report.mjs \
   --dir ./docs/<slice>-e2e \
   --brand "Issue #N E2E" \
   --title "…" --h1 "…" --lede "…" \
@@ -395,9 +397,9 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
 ## 依赖检查（跑套件前）
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url <WEB_URL>
+node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>
 # 调研模式：--url 直接指向公网目标，加 --mode research
-node ~/.claude/skills/tple-skill/scripts/check-env.mjs --url https://example.com --mode research
+node $SKILL_DIR/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
 检查 node ≥18、agent-browser、ffmpeg、ffprobe、目标 web 可达；全 ✓ 退出码 0，缺项退出码 1 并打印安装指引。`--mode research` 时 401/403 视为「可达但受限」（需登录/反爬），不当环境故障。
@@ -557,7 +559,7 @@ agent-browser snapshot -i        # 逐关键落地页重复；每页访问一次
 ### 报告命令示例
 
 ```bash
-node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
+node $SKILL_DIR/scripts/build-report.mjs \
   --dir docs/research-example.com \
   --brand "产品调研 · example.com" \
   --title "example.com 产品调研报告" \
