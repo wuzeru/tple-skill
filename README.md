@@ -15,7 +15,7 @@
 
 ## 安装
 
-skill 本体位置无关：所有脚本自定位（`scripts/*.mjs` 以自身位置解析），SKILL.md 内脚本调用一律按 `$SKILL_DIR`（SKILL.md 所在目录）约定引用。因此安装只做一件事——**把本目录放进你的 agent 的 skill 扫描路径**（或等价位置）。
+skill 本体位置无关：所有脚本自定位（`scripts/*.mjs` 以自身位置解析）。SKILL.md 内脚本调用一律以 `$SKILL_DIR` 指代「SKILL.md 所在目录」——这是给 agent 看的占位符，agent 加载 skill 时按实际路径解析；你在终端手动跑脚本时 `cd` 到本目录用相对路径即可。因此安装只做一件事——**把本目录放进你的 agent 的 skill 扫描路径**（或等价位置）。
 
 ```bash
 # 1. clone

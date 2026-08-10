@@ -1,6 +1,6 @@
 # tple-skill — 参考实现
 
-> **路径约定**：下文示例中的 `$SKILL_DIR` = 本 skill 的 SKILL.md 所在目录（随 agent 实际安装位置而定），与 SKILL.md 开头的约定一致。
+> **路径约定**：下文示例中的 `$SKILL_DIR` = 本 skill 的 SKILL.md 所在目录（随 agent 实际安装位置而定；是占位符不是环境变量，终端手动跑可 `cd` 到 skill 目录用相对路径），与 SKILL.md 开头的约定一致。
 
 ## agent-browser 最小命令速查（先看这里，别猜）
 

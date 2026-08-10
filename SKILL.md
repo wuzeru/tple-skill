@@ -15,7 +15,10 @@ description: >-
 
 定位：不做 checklist + 截图 markdown 式验收，而是交付**带媒体的按 case 验收站**。
 
-**路径约定**：`SKILL_DIR` = 本 SKILL.md 所在目录（agent 加载本 skill 时所在的路径，与安装位置无关——可能是 Claude Code、Cursor 或任何其他 agent 的 skill 目录）。下文所有脚本调用一律以 `$SKILL_DIR/scripts/...` 为准，执行时按你的实际加载路径解析，**不要硬编码任何特定 agent 的安装路径**。
+**路径约定**：`SKILL_DIR` = 本 SKILL.md 所在目录（agent 加载本 skill 时所在的路径，与安装位置无关——可能是 Claude Code、Cursor 或任何其他 agent 的 skill 目录）。下文所有脚本调用一律以 `$SKILL_DIR/scripts/...` 为准：
+
+- **`SKILL_DIR` 是占位符，不是已存在的环境变量**。执行时把它替换为你实际加载本 skill 的目录路径，**不要硬编码任何特定 agent 的安装路径**
+- 终端手动运行：`cd` 到本 skill 目录后用相对路径即可，如 `node scripts/check-env.mjs --url <WEB_URL>`（脚本以自身位置定位，与 cwd 无关）
 
 两种模式：
 
