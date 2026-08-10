@@ -26,7 +26,7 @@ node scripts/build-report.mjs --dir <report-dir> \
 # mp4/webm/png 全缺 → 退出码 1（这是特性，不要"修复"成静默通过）
 ```
 
-本仓库无 build/lint。改动后的验证方式 = 用 opencode 或当前 agent 对真实目标跑一遍完整 TPLE 流程（回归目标：`/Users/zeru/tmp/tple-fixture`，一个埋了空标题 bug 的 Todo app；`node server.mjs` 起在 :4173，demo/demo123）。
+本仓库无 build/lint。改动后的验证方式 = 用 opencode web 驱动 skill 对真实目标跑一遍完整 TPLE 流程（回归目标：`/Users/zeru/tmp/tple-fixture`，一个埋了空标题 bug 的 Todo app；`node server.mjs` 起在 :4173，demo/demo123）。
 
 ## Architecture
 
@@ -42,7 +42,7 @@ node scripts/build-report.mjs --dir <report-dir> \
 
 ## 测试方法（血泪沉淀，务必遵守）
 
-用 opencode（`opencode run --dangerously-skip-permissions`）或当前 agent 驱动 skill 做回归。关键机制：
+用 **opencode web** 驱动 skill 做回归：目标目录起 `opencode web --port 4096`，项目根 `opencode.json` 设 `"permission": "allow"` 免权限弹窗卡自动化（schema 合法值：`ask|allow|deny`）。关键机制：
 
 1. **录屏设施必须与被测 agent 隔离**：被测 agent 跑 skill 的清理步骤会 `pkill agent-browser`——绝不能用 agent-browser 给被测过程录屏。录屏用 ffmpeg 屏幕录制（`-f avfoundation`），观看用独立 user-data-dir 的 Chrome 窗口
 2. **ffmpeg 屏幕设备索引必须运行时解析**（`-list_devices` 找 "Capture screen"），shell 和 node 子进程里索引会漂移；多屏环境先按 PID 用 osascript 把观看窗口强制摆到目标屏并验证坐标，再开录
