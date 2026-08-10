@@ -530,7 +530,7 @@ while (failedIds.length > 0 && round < MAX_ROUNDS) {
 
 与验收模式共用同一套 run-cases / logCase / build-report 管道，差异集中在「case 来源、状态语义、无 auto-fix」：
 
-### 探索巡检（case 草案之前，只读）
+### 探索巡检（case 草案之前）
 
 ```bash
 agent-browser open https://example.com
@@ -540,9 +540,9 @@ agent-browser open https://example.com/pricing
 agent-browser snapshot -i        # 逐关键落地页重复；每页访问一次即可（节流）
 ```
 
-- 探索产出只用于总结 5–12 条草案；**用户确认前不录屏、不出报告**（门闩与验收模式一致）
+- 探索产出只用于总结 5–12 条草案（核心功能占多数）；**用户确认前不录屏、不出报告**（门闩与验收模式一致）
 - 用户给了调研重点 → 优先覆盖；其余保持基础覆盖
-- 表单只填到提交前一步截图；真实提交/下单/删除需用户明示
+- 核心功能（创建/编辑/生成）默认实际走一遍并记录交付结果；真实支付/下单/删除/对外发送需用户明示，未明示的表单只填到提交前一步截图
 - 401/403/验证码/付费墙 → 记 `BLOCKED` + 实际现象（不瞎猜、不绕反爬）
 
 ### status 语义对照
@@ -564,7 +564,7 @@ node ~/.claude/skills/tple-skill/scripts/build-report.mjs \
   --h1 "example.com 产品调研" \
   --lede "来源：https://example.com · 覆盖注册流程与定价页 · 未登录态调研" \
   --env "目标 example.com · 未登录态" \
-  --recording "录屏方式：agent-browser 原生 record（调研模式，只读探索）；过短回退分镜。" \
+  --recording "录屏方式：agent-browser 原生 record（调研模式，实际走核心功能）；过短回退分镜。" \
   --cases docs/research-example.com/cases.json
 ```
 
