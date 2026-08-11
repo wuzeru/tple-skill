@@ -12,7 +12,7 @@
  *
  * 读取 <dir>/meta.jsonl
  * 可选 <dir>/cases.json 或 --cases：{ "01-login": { uc, steps, expected } }
- * 可选 <dir>/runs.json：{ "01-login": { lastRanAt, runCount } }
+ * 可选 <dir>/runs.json：{ usage?: { input, output, cacheRead, total, source }, "01-login": { lastRanAt, runCount } }
  * CSS/HTML 模板来自本 skill 的 assets/ + templates/（禁止另起视觉稿）
  */
 import fs from "node:fs";
@@ -138,6 +138,50 @@ function hasFixInfo(row) {
   return Array.isArray(row.fixLog) && row.fixLog.length > 0;
 }
 
+const USAGE_SOURCE_LABEL = {
+  transcript: "transcript",
+  "opencode-api": "opencode API",
+  "opencode-local": "opencode 本地",
+  ccusage: "ccusage",
+  "agent-self-report": "agent 自报",
+  unsupported: "不支持",
+};
+
+const UNSUPPORTED_USAGE_LINE = "Token 用量：当前 agent 不支持 token 消耗采集";
+
+/** 报告头用量行；无 usage 返回 ""；unsupported 显示固定文案 */
+function formatUsageMeta(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return "";
+  const source = String(usage.source || "").trim();
+  if (source === "unsupported") {
+    return usage.message
+      ? `Token 用量：${String(usage.message)}`
+      : UNSUPPORTED_USAGE_LINE;
+  }
+
+  const total = Number(usage.total);
+  if (!Number.isFinite(total)) return "";
+
+  const fmt = (n) => Number(n).toLocaleString("en-US");
+  const parts = [];
+  for (const [key, label] of [
+    ["input", "input"],
+    ["output", "output"],
+    ["cacheRead", "cache"],
+  ]) {
+    const n = Number(usage[key]);
+    if (Number.isFinite(n)) parts.push(`${label} ${fmt(n)}`);
+  }
+  parts.push(`total ${fmt(total)}`);
+
+  const isApprox = source === "agent-self-report";
+  const sourceLabel =
+    USAGE_SOURCE_LABEL[source] || (source ? source : "");
+  const prefix = isApprox ? "Token 用量约" : "Token 用量";
+  const suffix = sourceLabel ? `（来源：${sourceLabel}）` : "";
+  return `${prefix}：${parts.join(" · ")}${suffix}`;
+}
+
 /**
  * 有修复时展示：Bug 点 + 修复方案（+ 可选分轮次）
  * 兼容旧字段 change；新字段优先 bug / fix
@@ -239,6 +283,7 @@ if (fs.existsSync(runsPath)) {
     runStats = {};
   }
 }
+const sessionUsage = runStats.usage;
 
 const VALID_STATUS = new Set(["PASS", "FAIL", "BLOCKED", "OBSERVE"]);
 const rawLines = fs
@@ -338,6 +383,11 @@ if (fixedCases.length > 0) {
   fixSummaryHtml = `<div class="${cls}">${msg}</div>`;
 }
 
+const usageLine = formatUsageMeta(sessionUsage);
+const metaUsageHtml = usageLine
+  ? `      <p class="meta">${esc(usageLine)}</p>\n`
+  : "";
+
 const html = fill(shellTpl, {
   TITLE: esc(title),
   CSS: css,
@@ -350,6 +400,7 @@ const html = fill(shellTpl, {
     `生成时间 ${now}${envExtra ? ` · ${envExtra}` : ""}`,
   ),
   META_RECORDING: esc(recordingNote),
+  META_USAGE: metaUsageHtml,
   PASS: String(pass),
   FAIL: String(fail),
   BLOCKED: String(blocked),

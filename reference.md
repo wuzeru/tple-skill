@@ -1,6 +1,8 @@
 # tple-skill — 参考实现
 
 > **路径约定**：下文示例中的 `$SKILL_DIR` = 本 skill 的 SKILL.md 所在目录（随 agent 实际安装位置而定；是占位符不是环境变量，终端手动跑可 `cd` 到 skill 目录用相对路径），与 SKILL.md 开头的约定一致。
+>
+> **工作根 / 产物 / 记忆**（见 SKILL.md「工作根、项目记忆、产物目录」）：报告目录默认 `.tple/<slice>-e2e/`（或已约定的 `docs/<slice>-e2e/`）；项目记忆为工作根 `tple-memory.md`（编排开跑先读、可复用经验追加；站点业务断言不进 SKILL）。下文 `--dir docs/...` 示例与 `.tple/...` 等价，以实际报告目录为准。
 
 ## agent-browser 最小命令速查（先看这里，别猜）
 
@@ -20,10 +22,11 @@ agent-browser get box <sel>       # 元素包围盒（坐标点击用）
 agent-browser mouse move <x> <y>  # CDP 可信鼠标事件（move / down / up）——自定义组件只认真实事件时的兜底
 agent-browser mouse down / mouse up
 agent-browser record start x.webm / record stop   # stop 幂等：无录制时返回 No recording in progress 不报错；每 case 开头防御性 stop 一次
-agent-browser close --all         # 关闭所有 session
-agent-browser dashboard start     # 起观测仪表盘 :4848（套件开始前必做；幂等）
-agent-browser dashboard stop      # 套件结束后关（幂等，不影响普通命令）
+# 以下三条禁止在 case/run-cases 手写——只经 tple-browser CLI：
+#   close --all / dashboard start|stop / 特征 pkill
 ```
+
+**语义化浏览器 API（强制）**：编排用 `scripts/tple-browser.mjs`；run-cases 用 `createBrowser`（见下「tple-browser」）。禁止 `spawnSync("agent-browser"`。
 
 四条最贵的教训：
 
@@ -79,10 +82,17 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 ## runs.json
 
-与 `meta.jsonl` 同目录。`logCase` 每次写入时累加：
+与 `meta.jsonl` 同目录。`logCase` 每次写入时累加 case 条目；整次 TPLE 会话的 token 用量写在顶层保留键 `usage`（可选）：
 
 ```json
 {
+  "usage": {
+    "input": 12345,
+    "output": 6789,
+    "cacheRead": 1000,
+    "total": 20134,
+    "source": "transcript"
+  },
   "01-login": {
     "lastRanAt": "2026-08-02T13:04:12.000Z",
     "runCount": 3
@@ -90,7 +100,19 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 }
 ```
 
-报告 case 头展示：`最后跑 2026-08-02 21:04 · 共跑 3 次`（Asia/Shanghai）。
+- **case 条目**：报告 case 头展示 `最后跑 2026-08-02 21:04 · 共跑 3 次`（Asia/Shanghai）
+- **`usage`（保留键，勿用作 case id）**：编排 + 全部 case subagent 会话合计用量，不是单个 case。由编排在出报告前写入：
+  - 有数字：`{ input, output, cacheRead, total, source }`（至少 `total` + `source`）
+  - 不支持：`{ source: "unsupported", message: "当前 agent 不支持 token 消耗采集" }`（报告头显示该文案）
+  - 老报告无 `usage` 字段：头部不渲染用量行（向后兼容）
+- **`source`**：`ccusage` / `transcript` / `opencode-local` / `unsupported` 等
+- **采集降级**：ccusage → 本地账本 → unsupported（禁止估算）
+
+出报告前：
+
+```bash
+node $SKILL_DIR/scripts/collect-usage.mjs --dir ./docs/<slice>-e2e
+```
 
 ## 关键帧放大
 
@@ -98,111 +120,99 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 ---
 
-## 清理残留进程（录屏前必做，跨平台）
+## tple-browser（语义化套件 API，唯一合法路径）
 
-agent-browser 全平台可用（包内自带 darwin / linux / win32 二进制）。清理分两步：先关 session，再按平台杀残留 Chrome（只杀带 agent-browser user-data-dir 特征的进程，勿伤用户日常浏览器；两类特征都要匹配——`agent-browser-chrome-`，以及 `--profile <名字>` 复制出的 `agent-browser-profile-`）：
+状态文件：报告目录下 `.tple-browser.json`（`phase` / `loginMode` / `profile` / `executablePath`）。
+
+### 编排 CLI
 
 ```bash
-# 全平台
-agent-browser close --all 2>/dev/null || true   # 先关 daemon 持有的 session
+# 套件启动：close --all + 特征 pkill + dashboard start + 写状态
+# mode=none → phase=run；reuse → phase=run（强制 profile+chrome）；manual → phase=login
+node $SKILL_DIR/scripts/tple-browser.mjs suite-boot --dir docs/<slice>-e2e \
+  --mode none|reuse|manual [--profile …] [--chrome …]
 
-# macOS / Linux（两个特征都要杀：--profile 复制出的 profile 目录是 agent-browser-profile-*，
-# 不带 agent-browser-chrome- 前缀，漏杀会残留）
-pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
-pkill -f 'user-data-dir=.*/agent-browser-profile-' 2>/dev/null || true
-sleep 1.5
+# 选项 B
+node $SKILL_DIR/scripts/tple-browser.mjs login-open --dir … --url <登录页>
+node $SKILL_DIR/scripts/tple-browser.mjs login-wait --dir … --ok-url-regex '\/app|\/dashboard'
+node $SKILL_DIR/scripts/tple-browser.mjs login-done --dir …   # phase→run；关掉 headed；此后 headed 拒绝
+
+# 套件结束
+node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir …
+
+node $SKILL_DIR/scripts/tple-browser.mjs status --dir …
+# 探活（与 createBrowser.run 同门闩）
+node $SKILL_DIR/scripts/tple-browser.mjs run --dir … --session probe -- get url
 ```
 
-```powershell
-# Windows（PowerShell）：两类 user-data-dir 特征都按命令行匹配
-powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' -or $_.CommandLine -like '*agent-browser-profile-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+**仅 suite-boot / suite-teardown 可套件级清理**；禁止每个 case 前 purge。
+
+### run-cases：createBrowser
+
+```js
+// 编排写 run-cases 时写入 skill 绝对路径；派发时 export TPLE_SKILL_DIR 供脚本/子进程使用
+import { createBrowser } from "/ABS/tple-skill/scripts/lib/tple-browser.mjs";
+
+const browser = createBrowser(import.meta.dirname); // 读同目录 .tple-browser.json
+const r = browser.run(caseId, ["open", url]);       // 自动 --session + --profile
+browser.run(caseId, ["snapshot", "-i"]);
+browser.closeSession(caseId);
+// browser.purge / closeAll / dashboard → throw
 ```
 
-**必须先 `close --all` 再杀进程**：daemon 可能残留指向别的项目页面的 session（实测曾串到 localhost:5173 的其他 dev server，造成整轮假 FAIL）。只杀进程不关 session 不够。
+派发前：`node $SKILL_DIR/scripts/check-run-cases.mjs --dir docs/<slice>-e2e`
+
+### 清理残留（已封装，勿在 run-cases 复制）
+
+`suite-boot` / `suite-teardown` 内部执行：`close --all` → 按平台杀 `agent-browser-chrome-` / `agent-browser-profile-` 特征进程 →（boot 时）`dashboard start` /（teardown 时）`dashboard stop`。
+
+**必须先 `close --all` 再杀进程**：daemon 可能残留指向别的项目页面的 session。只杀进程不关 session 不够。
 
 ---
 
-## 登录态决策（选项 A / B 实现参考）
+## 登录态决策（选项 A / B — 走 tple-browser）
 
-SKILL.md Step 2.5 的展开：检测到需登录 → 暂停 → 问用户选哪条路。决策伪代码：
+SKILL.md Step 2.5 的展开：检测到需登录 → 暂停 → 问用户选哪条路。
 
 ```
 if 出现登录墙 / 关键路径 401/403 / case 依赖登录态:
-    停下，把检测信号 + 四个选项（A 复用 profile / B headed 手动登录 / 提供凭据 / 公开路径）发给用户
-    按用户所选执行（调研模式下用户不选且无凭据 → 公开路径 + 标注未登录态）
+    停下，把检测信号 + 选项发给用户
+    按用户所选执行 suite-boot / login-*（调研模式默认公开路径）
 ```
 
-### 选项 A：复用本地 Chrome profile 登录态
-
-**1) 列出本地 profile 供用户选：**
+### 选项 A：复用本地 Chrome profile
 
 ```bash
-agent-browser profiles            # 人类可读：目录名 (显示名)
-agent-browser profiles --json     # 机器可读；传错名字给 --profile 也会报错列出全部
+agent-browser profiles            # 或 profiles --json
+node $SKILL_DIR/scripts/tple-browser.mjs suite-boot --dir docs/<slice>-e2e \
+  --mode reuse --profile "working" \
+  --chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# phase=run；之后 createBrowser().run 自动注入 --profile + --executable-path
+node $SKILL_DIR/scripts/tple-browser.mjs run --dir … --session probe -- get url
+# 再用 eval / snapshot 验证登录态元素后再派发 case
 ```
 
-备用（agent-browser 不可用时读 `Local State`，macOS）：
+**为什么必须系统 Chrome（`--chrome` / executable-path）**：`--profile <名字>` 会复制到 `$TMPDIR/agent-browser-profile-*`。默认 Chrome for Testing 用 `Chromium Safe Storage`，解不开真实 Chrome 的 `Chrome Safe Storage` v10 cookie → **静默丢登录态**（vercel-labs/agent-browser#1502）。
 
-```bash
-python3 -c "import json,os;d=json.load(open(os.path.expanduser(\"~/Library/Application Support/Google/Chrome/Local State\")))[\"profile\"][\"info_cache\"];[print(k,\"→\",v[\"name\"]) for k,v in d.items()]"
-```
-
-名字解析规则：**目录名精确匹配优先**（如 `Profile 1`），其次**显示名忽略大小写匹配**（如 `working`）；多个显示名撞车会报错要求用目录名。
-
-**2) 用户选定后启动（macOS 关键：必须 `--executable-path` 指向系统真实 Chrome）：**
-
-```bash
-CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"   # 按平台替换
-agent-browser --session tple --profile "working" --executable-path "$CHROME" open <目标站登录后的页面>
-```
-
-**为什么必须 `--executable-path`（实测，0.26.0 macOS）**：`--profile <名字>` 会把所选 profile **复制到临时目录**（`$TMPDIR/agent-browser-profile-*`）再启动，不占用户正在用的 Chrome 的锁——这部分无需退出 Chrome，机制正确。但 agent-browser 默认启动的是自带的 **Chrome for Testing**：
-
-**⚠️ 同一复制机制的另一个后果——客户端同意状态会被重置**：每次 `--profile <名字>` 启动都是复制一份**新副本**（临时目录名每次不同），站点存在客户端（localStorage/IndexedDB）里的**同意状态**（Terms & Conditions Accept、Cookie 横幅、引导页完成标记）从「未同意」重新开始。用户手动点过的 Accept 若存进了后来被 `pkill` 掉的临时实例，就白费——下次启动又是新副本，弹窗复现。因此：有状态弹窗应在**同一实例内**处理（配合坐标点击），尽量一次会话跑完所有依赖该同意的 case；**不要遇阻就 `close --all` + `pkill` 重开**当万能药，重启只用于残留进程污染。
-
-| 二进制 | macOS Keychain 加密项 |
-|---|---|
-| 真实 Google Chrome | `Chrome Safe Storage` |
-| Chrome for Testing（agent-browser 默认） | `Chromium Safe Storage` |
-
-macOS 上 cookie 值用 Keychain 密钥加密（`v10` 前缀）。真实 Chrome profile 的 cookie 是用 `Chrome Safe Storage` 的密钥封的；Chrome for Testing 拿 `Chromium Safe Storage` 的密钥去解，全部失败、cookie 被静默丢弃——**启动成功、不报错，但登录态全丢**（实测：复制出的 Cookies DB 里有完整的 github `user_session`/`logged_in` 行，浏览器里却读不到；上游已确认为 vercel-labs/agent-browser#1502）。改用系统 Chrome 可执行路径后登录态完整继承（实测 github `user-login` 正确显示）。
-
-**3) 验证登录态再续跑**（别信「应该登录了」）：
-
-```bash
-agent-browser --session tple --profile "working" --executable-path "$CHROME" eval "document.querySelector('meta[name=user-login]')?.content"   # github 例
-# 或查登录态 cookie / 页面用户头像元素 / get url 是否不再重定向到登录页
-```
-
-**4) flag 纪律**：`--profile`（+ `--executable-path`）**每条命令都要带**——daemon 按命令参数决定浏览器启动方式，漏带一条命令就会以无登录态的默认 session 执行。run-cases.mjs 里把它们放进统一的命令构造器。
+**同意状态重置**：每次以 profile **名**冷启会重新复制副本，Terms/Cookie 同意可能重置。有状态弹窗在同一实例内处理；不要遇阻就 suite 级重启。
 
 ### 选项 B：headed 引导手动登录
 
-**已实测**（captcha fixture :4175，图形验证码登录页）：headed 弹窗 → 人工过验证码+登录 → 轮询 3s 命中 → 跨会话登录态保持，整条链路可用。
-
 ```bash
-PROF="$TMPDIR/tple-manual-login-profile"   # 独立临时目录，勿复用用户真实 Chrome 目录
-mkdir -p "$PROF"
-agent-browser --session tple --headed --profile "$PROF" open <目标站登录页>
-# 提示用户在弹出的窗口里手动完成登录（含 2FA/SSO/人机验证）；登录完成前轮询等待
-# （实测 get url 是最快信号——URL 跳转先于页面渲染完成；不要用 wait <selector>，
-#  本 skill 约定 wait 只接毫秒数）：
-for i in $(seq 1 60); do
-  url=$(agent-browser --session tple get url 2>/dev/null | head -1)
-  case "$url" in */app*|*/dashboard*) break;; esac   # 换成目标站的登录后 URL 特征
-  sleep 3
-done
-# URL 命中后再用页面内信号复核（get count 登录态元素 / cookies get 会话 cookie），双确认才续跑
-# 验证通过后，后续 case 继续带 --profile "$PROF" 续跑原流程
+node $SKILL_DIR/scripts/tple-browser.mjs suite-boot --dir docs/<slice>-e2e --mode manual
+# 默认 profile=<report>/chrome-profile
+node $SKILL_DIR/scripts/tple-browser.mjs login-open --dir … --url <登录页>
+# 用户在 headed 窗完成登录（2FA/SSO/验证码）
+node $SKILL_DIR/scripts/tple-browser.mjs login-wait --dir … --ok-url-regex '\/app|\/home'
+node $SKILL_DIR/scripts/tple-browser.mjs login-done --dir …
+# 此后 case：无 headed、同 profile；login-open 再调会失败
 ```
 
-跨步骤保持（实测确认）：登录态写入该 `--profile` 目录，`close` 后**新 session 挂同一目录即复用**（目录路径模式不经过 Keychain 加解密差异，同产品持久化）。需要导出时用 `state save/load`（**仅限单浏览器/单 profile 场景**，见下对照表）。
+跨 session 保持：登录态写在 `--profile` 目录；`closeSession` 后新 session 挂同一目录即复用。
 
-### 选项 C：连接用户真实浏览器（人机检测 / 需要人在场操作的场景）
+### 选项 C：CDP 连接用户真实浏览器
 
-**适用**：登录/生成路径被**人机检测门闩**拦死（Cloudflare turnstile、hCaptcha 等，自动化不能也不应绕过），需要人在浏览器里手动完成，agent 随后在**同一浏览器上下文**续操作。
-
-**连接方式（0.26.0 实测）**：Chrome M136+ 下 `--auto-connect` / `--cdp <port>` **发现不了**已开的 CDP 端口（DevToolsActivePort 不再写入，上游 vercel-labs/agent-browser#1321）；且 `--auto-connect` 每次失败都会触发「自动拉起浏览器」→ macOS 反复弹权限确认框。**唯一可靠的接入方式是显式 `connect <ws-url>`**：
+`tple-browser --mode cdp` **本期未实现**（suite-boot 拒绝）。手工流程见下（仍须预检权限握手；禁止 `--auto-connect` 重试循环）。
 
 ```bash
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -258,7 +268,7 @@ ffprobe duration ≥4s 且帧数持续（-count_frames，≈10fps×秒数）采�
 **短/断帧 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
 
 1. `record start` 前页面必须已渲染（open + wait 之后再 start）
-2. webm < 4s 或**帧数寥寥**（`-count_frames` 实测，如 4s 却只有个位数帧）→ **先清理残留进程（见上，含 `close --all`），重试一次原生**
+2. webm < 4s 或**帧数寥寥**（`-count_frames` 实测，如 4s 却只有个位数帧）→ **先 `close` 本 case `--session` 后重试原生**（subagent 禁止 `close --all` / 全局 pkill；需套件级清理时回报编排）
 3. 重试后仍短/断帧 → 分镜回退，并在 logCase notes 或日志里标明「分镜回退」
 
 **为什么用帧数而不用体积判健康**（0.26.0 实测）：VP9 10fps 下 5s 的干净原生录制仅 ~32KB（1280 宽、画面近乎静止）。若沿用「体积 ≥50KB」阈值，会把**真实捕获**误判成空壳、白白降级成分镜。空壳/断帧的真特征是**时长看着正常但 `-count_frames` 解出的帧数极少**（如标称 30s 只有 ~15KB、十几帧）——帧数是唯一可靠的判据。
@@ -285,7 +295,7 @@ ab(["fill", `@${ref}`, text]);
 // 失败再 click + 设 value 并 dispatch input/change
 ```
 
-环境变量：`WEB_URL` `API_URL` `LOGIN_NAME` `LOGIN_PASS` `CASE_LIMIT` `MIN_NATIVE_SEC`（默认 4）。
+环境变量：`WEB_URL` `API_URL` `LOGIN_NAME` `LOGIN_PASS` `CASE_ID` `MIN_NATIVE_SEC`（默认 4）。详见下文「编排与 case subagent」。
 
 破坏性 case（停 API、network abort）必须 `try/finally` 或 `process.on("exit")` 恢复。
 
@@ -328,19 +338,77 @@ function buildSlideshow(name, frames, vidDir) {
 
 ---
 
+## 编排与 case subagent
+
+TPLE **唯一**执行形态：编排 agent 锁定 `run-cases.mjs` → **串行**派发每 case 独立 subagent → 编排汇总与出报告。禁止主会话包办全部 case。
+
+### `CASE_ID` 过滤（run-cases 必须支持）
+
+```js
+const CASE_ID = process.env.CASE_ID || "";
+const selected = CASE_ID
+  ? cases.filter((c) => c.id === CASE_ID)
+  : []; // 无 CASE_ID 时不要在编排进程跑全量；全量只通过派发完成
+if (!selected.length) {
+  console.error(CASE_ID ? `unknown CASE_ID=${CASE_ID}` : "refuse full run without CASE_ID (orchestrator must dispatch subagents)");
+  process.exit(1);
+}
+```
+
+冒烟可用编排临时设 `CASE_ID` 自测单案脚本，但仍算「编排验证」，不是用主会话替代派发。
+
+环境变量：`WEB_URL` `API_URL` `LOGIN_NAME` `LOGIN_PASS` `CASE_ID` `MIN_NATIVE_SEC`（默认 4）。（旧的 `CASE_LIMIT` 全量切片仅用于编排自检，正式套件用派发。）
+
+### Subagent 提示词模板
+
+```markdown
+你是 TPLE case subagent。只做这一个 case。
+
+- CASE_ID: <id>
+- title: <title>
+- steps / expected: …
+- 报告目录: docs/<slice>-e2e/
+- TPLE_SKILL_DIR: <skill 绝对路径>（环境变量已注入）
+- 执行: `CASE_ID=<id> node docs/<slice>-e2e/run-cases.mjs`
+- 浏览器：只用 createBrowser().run / closeSession；禁止裸 agent-browser、close --all、pkill、dashboard
+- 禁止: 改 run-cases.mjs / cases.json、跑其他 case、build-report、collect-usage、改业务代码
+- meta 必须经脚本 logCase 写成 `id|title|STATUS|notes` 一行
+- 完成后打印: SUBAGENT_DONE <id> <PASS|FAIL|BLOCKED|OBSERVE>
+```
+
+### 套件级 vs case 级清理
+
+| 动作 | 谁 |
+|------|----|
+| `tple-browser suite-boot` / `suite-teardown`（含 close --all、pkill、dashboard） | **仅编排** |
+| `login-open` / `login-wait` / `login-done` | **仅编排** |
+| `createBrowser().run` / `closeSession` | case subagent（经 run-cases） |
+| `check-run-cases` | 编排（锁定后、派发前） |
+| auto-fix 改代码 | 编排或单一 Fixer |
+| `collect-usage` 合计 + `build-report` | 编排 |
+
+### usage 多会话合计
+
+出报告前把编排 session + 各 `tple-case-<id>` / 派发记录的 sessionId 的 input/output/cacheRead/total **相加**写入 `runs.json.usage`；`usage.note` 可列 session 列表。禁止只采「最后一个 session」。
+
+---
+
 ## run-cases 结构建议
 
 ```
-purgeAgentBrowser()
-beginCase(id)          # purge + 新 session
-ensureLoggedIn()       # 录外；缓存 token
-preparePage(url)       # 录外：open + wait，页面完全就位
-record stop            # 防御性：幂等，清掉被中断录制的残留状态（否则 start 报 Recording already active）
-record start webm
-writeToken via eval    # ⚠️ 录中不 open（断帧）；页间移动用 click 链接 / back；ref 失败改轮询 eval 点击
-actions() + shot("end") + dwell(2000)
-record stop → ffprobe → native or slideshow
-close + logCase
+# 顶部：import createBrowser（禁止 spawnSync("agent-browser")）
+const browser = createBrowser(import.meta.dirname)
+
+# subagent 内：CASE_ID 已过滤到单案
+browser.run(id, ["record", "stop"])   # 防御性
+# ensureLoggedIn 若需写 token：browser.run(id, ["eval", "…"]) 录外
+browser.run(id, ["open", url]); browser.run(id, ["wait", "2000"])  # 录外就位
+browser.run(id, ["record", "start", webm])
+# … click/fill/wait 仅经 browser.run；录中不 open
+browser.run(id, ["record", "stop"])
+# ffprobe → native or slideshow
+browser.closeSession(id)              # 勿 close --all
+logCase(…)
 ```
 
 ### logCase 标准实现（必须包含，禁止用简化版 writeMeta 替代）
@@ -351,13 +419,17 @@ close + logCase
 const META  = path.join(OUT, "meta.jsonl");
 const RUNS  = path.join(OUT, "runs.json");
 
+function readRuns() {
+  try { return JSON.parse(fs.readFileSync(RUNS, "utf8")); } catch { return {}; }
+}
+
 function logCase(id, title, status, notes) {
   // 1. meta.jsonl — 追加一行
-  fs.appendFileSync(META, `${id}|${title}|${status}|${notes}\n`);
+  const clean = String(notes || "").replace(/\n/g, " ").replace(/\|/g, " ").slice(0, 300);
+  fs.appendFileSync(META, `${id}|${title}|${status}|${clean}\n`);
 
-  // 2. runs.json — 累加 runCount + 更新 lastRanAt
-  let runs = {};
-  try { runs = JSON.parse(fs.readFileSync(RUNS, "utf8")); } catch { runs = {}; }
+  // 2. runs.json — 累加 runCount + 更新 lastRanAt（保留顶层 usage）
+  const runs = readRuns();
   const prev = runs[id] || { runCount: 0 };
   runs[id] = {
     lastRanAt: new Date().toISOString(),
@@ -365,9 +437,16 @@ function logCase(id, title, status, notes) {
   };
   fs.writeFileSync(RUNS, JSON.stringify(runs, null, 2));
 }
+
+/** 出报告前由编排写入多会话合计用量；优先 collect-usage / 手工合计。 */
+function writeUsage(usage) {
+  const runs = readRuns();
+  runs.usage = usage;
+  fs.writeFileSync(RUNS, JSON.stringify(runs, null, 2));
+}
 ```
 
-**禁止**用只写 `meta.jsonl` 的 `writeMeta` / `logMeta` 等简化函数替代——报告依赖 `runs.json` 展示「最后跑时间 · 共跑 N 次」。
+**禁止**用只写 `meta.jsonl` 的 `writeMeta` / `logMeta` 等简化函数替代——报告依赖 `runs.json` 展示「最后跑时间 · 共跑 N 次」。`logCase` 读写整文件时必须保留顶层 `usage`（上例已满足）。用量采集实现见 `scripts/lib/token-usage.mjs` / `scripts/collect-usage.mjs`。
 
 ---
 
@@ -402,7 +481,12 @@ node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>
 node $SKILL_DIR/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
-检查 node ≥18、agent-browser、ffmpeg、ffprobe、目标 web 可达；全 ✓ 退出码 0，缺项退出码 1 并打印安装指引。`--mode research` 时 401/403 视为「可达但受限」（需登录/反爬），不当环境故障。
+检查 node ≥18、agent-browser、ffmpeg、ffprobe、**ccusage**、目标 web 可达；全 ✓ 退出码 0，缺项退出码 1 并打印安装指引。`--mode research` 时 401/403 视为「可达但受限」（需登录/反爬），不当环境故障。另输出软探测 `token-meter`（不阻断）：当前 agent 的用量采集路径或「不支持」。
+
+```bash
+node $SKILL_DIR/scripts/collect-usage.mjs --dir <report-dir>   # 出报告前写入 runs.json.usage
+node $SKILL_DIR/scripts/collect-usage.mjs --probe              # 仅探测
+```
 
 ## 校验命令
 

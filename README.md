@@ -7,11 +7,12 @@
 ## 它能做什么
 
 1. 定义测试用例（从用户输入、仓库 CSV、或按项目文档自动生成）
-2. 用 `agent-browser` 逐 case 录屏执行
+2. **编排 agent** 锁定 `run-cases.mjs`，再 **按 case 串行派发独立 subagent** 录屏执行（禁止主会话包办全套）
 3. 录屏过短（< 4s）自动回退分镜截图
-4. FAIL case 自动修复（最多 3 轮 analyze → fix → re-test）
-5. 生成自包含 HTML 验收报告（侧栏导航 + 视频 + PASS/FAIL/BLOCKED）
-6. **产品调研模式**：只给网址、无代码——agent 探索站点出 case 草案，确认后**实际走一遍产品核心功能**、逐 case 录屏，产出带视频的调研报告（使用场景、操作方法、交付结果；走不通的路径记为发现；不改本地项目内容、不进 auto-fix）
+4. FAIL case 由编排 auto-fix（最多 3 轮）后**重派**该 case subagent
+5. 生成自包含 HTML 验收报告（侧栏导航 + 视频 + PASS/FAIL/BLOCKED）；usage 为多会话合计
+6. **产品调研模式**：只给网址、无代码——编排探索出草案，确认后同样按 case 派发 subagent 录屏，产出调研报告（不改本地项目、不进 auto-fix）
+7. 项目级 **`tple-memory.md`**（开跑先读、经验追加）+ 运行产物默认落在工作根 **`.tple/<slice>/`**
 
 ## 安装
 
@@ -78,9 +79,14 @@ tple-skill/
 │   └── case-section.html # 单 case 区块模板
 ├── scripts/
 │   ├── build-report.mjs  # 报告生成器（读 meta.jsonl → 内联 CSS → index.html）
-│   ├── check-env.mjs     # 环境依赖门闩（node/agent-browser/ffmpeg/ffprobe/目标可达）
-│   ├── install-deps.mjs  # 缺啥装啥 + 复检
-│   └── check-update.mjs  # 版本自检与更新（零依赖、24h 缓存、离线降级）
+│   ├── check-env.mjs     # 环境依赖门闩（node/agent-browser/ffmpeg/ffprobe/ccusage/目标可达）
+│   ├── collect-usage.mjs # 出报告前写入 runs.json.usage（ccusage→本地→unsupported）
+│   ├── tple-browser.mjs  # 套件生命周期：suite-boot / login-* / suite-teardown
+│   ├── check-run-cases.mjs # 派发前静态闸：必须 createBrowser，禁止裸 agent-browser
+│   ├── lib/token-usage.mjs # token 采集共享逻辑
+│   ├── lib/tple-browser.mjs # createBrowser + 状态门闩（profile/phase）
+│   ├── install-deps.mjs  # 缺依赖自动安装 + 复检
+│   └── check-update.mjs  # 版本自检 / --apply 更新
 └── README.md
 ```
 

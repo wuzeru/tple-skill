@@ -10,7 +10,9 @@
  *   2. agent-browser（浏览器操作与 record 录屏）
  *   3. ffmpeg（转码 / 分镜 concat / poster 提取）
  *   4. ffprobe（录后时长校验）
- *   5. --url 给了目标地址时，探测 web 可达性
+ *   5. ccusage（session token 用量采集；可用全局或 npx）
+ *   6. --url 给了目标地址时，探测 web 可达性
+ *   · token-meter（软探测，不阻断）：ccusage → 本地账本 → 不支持则提示
  *
  * 可选 --mode research：调研模式。目标为公网 URL，无需本地 dev server；
  *   401/403 视为「可达但受限」（需登录/反爬，如实报告），不当环境故障。
@@ -18,9 +20,14 @@
  * 全部通过退出码 0；缺依赖退出码 1（打印安装指引）。
  */
 import { spawnSync } from "node:child_process";
+import {
+  probeCcusageInstall,
+  probeTokenMeterLine,
+} from "./lib/token-usage.mjs";
 
 const ok = [];
 const bad = [];
+const soft = [];
 
 function probe(bin, args = ["--version"], hint = "") {
   const r = spawnSync(bin, args, { encoding: "utf8", timeout: 15000 });
@@ -48,7 +55,15 @@ probe("agent-browser", ["--version"], "npm i -g agent-browser && agent-browser i
 probe("ffmpeg", ["-version"], "brew install ffmpeg / winget install Gyan.FFmpeg / choco install ffmpeg（按系统包管理器）");
 probe("ffprobe", ["-version"], "随 ffmpeg 一起安装");
 
-// 5. 可选：目标 web 可达性（用 curl，macOS/Linux 自带）
+// 5. ccusage（硬依赖：全局或 npx 可跑）
+const ccProbe = probeCcusageInstall();
+if (ccProbe.ok) {
+  ok.push({ bin: "ccusage", info: ccProbe.info });
+} else {
+  bad.push({ bin: "ccusage", hint: ccProbe.hint });
+}
+
+// 6. 可选：目标 web 可达性（用 curl，macOS/Linux 自带）
 const urlIdx = process.argv.indexOf("--url");
 const targetUrl = urlIdx >= 0 ? process.argv[urlIdx + 1] : "";
 const modeIdx = process.argv.indexOf("--mode");
@@ -80,9 +95,16 @@ if (targetUrl) {
   }
 }
 
+// · token-meter 软探测（ccusage 已装时）：不阻断主流程
+if (ccProbe.ok) {
+  const meter = probeTokenMeterLine();
+  soft.push({ bin: "token-meter", info: meter.info });
+}
+
 // 输出
 const pad = (s, n) => s + " ".repeat(Math.max(1, n - s.length));
 for (const item of ok) console.log(`  ✓ ${pad(item.bin, 14)} ${item.info}`);
+for (const item of soft) console.log(`  · ${pad(item.bin, 14)} ${item.info}`);
 for (const item of bad) console.log(`  ✗ ${pad(item.bin, 14)} 缺失/不可用 — ${item.hint}`);
 
 if (bad.length > 0) {
