@@ -58,6 +58,10 @@
 
 `pass|fail|blocked|observe` 写在 `.nav-item` 上，驱动 `.dot` 颜色（`observe` 仅调研模式用）。
 
+### Header meta
+
+`main` 内 h1 / lede 之后是 `.meta` 行：环境（生成时间 + `--env`）、录屏说明；若 `runs.json` 有顶层 `usage` 且含有效 `total`，渲染 Token 用量数字行。无 `usage`、或 `source=unsupported`、或无数：不渲染该行（拿不到外部事实则省略；老报告兼容）。只加文案行，不改布局/色板。
+
 ### Case section
 
 顺序固定：eyebrow（`UC · id`）→ `h2` → `.run-meta`（最后跑时间 · 共跑次数）→ badge → 步骤 / 期望 / 结果备注 → 录屏 video → 关键帧截图。

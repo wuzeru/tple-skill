@@ -1,9 +1,9 @@
 ---
 name: tple-skill
 description: >-
-  TPLE：按 case 做端到端验收——agent-browser 原生 record 录屏（残留进程需先清理），
-  过短则回退分镜截图，再生成按 case 分区的 HTML 验收报告（含视频/截图/PASS|FAIL|BLOCKED）。
-  也支持产品调研模式：只给网址、无代码，探索站点出 case 草案，逐 case 录屏产出调研报告。
+  TPLE：编排 agent + 每 case 独立 subagent 串行录屏验收（禁止单会话包办全套），
+  agent-browser 原生 record，过短回退分镜，生成按 case 分区的 HTML 验收报告。
+  也支持产品调研模式：只给网址、无代码，探索后同样按 case 派发 subagent 出调研报告。
   Use when the user asks for tple-skill, TPLE, E2E 录屏验收、按 case HTML 报告、
   issue 验收录屏、端到端 HTML report with video, or per-case acceptance evidence;
   also for 产品调研、竞品调研、研究/看看这个产品、只给 URL 的调研验收。
@@ -20,10 +20,33 @@ description: >-
 - **`SKILL_DIR` 是占位符，不是已存在的环境变量**。执行时把它替换为你实际加载本 skill 的目录路径，**不要硬编码任何特定 agent 的安装路径**
 - 终端手动运行：`cd` 到本 skill 目录后用相对路径即可，如 `node scripts/check-env.mjs --url <WEB_URL>`（脚本以自身位置定位，与 cwd 无关）
 
+### 工作根、项目记忆、产物目录
+
+**工作根（PROJECT_ROOT）**：验收模式 = 目标代码仓库根；调研模式 = 用户指定的运行目录（或当前 cwd）。所有相对路径相对工作根。
+
+| 路径 | 用途 |
+|------|------|
+| `tple-memory.md` | **项目级记忆**（建议入库）。本项目跑 TPLE 时发现的可复用经验：登录/断言坑、选择器、站点特有可见性信号等 |
+| `.tple/<slice>/` | **本次运行产物**（默认；是否入库由项目自定）。报告、`meta.jsonl`、`runs.json`、`cases.json`、`run-cases.mjs`、`videos/`、`.tple-browser.json`、临时 `state` 等 |
+| `docs/user-cases.csv` | 验收模式 case 清单（团队可读的产品文档，可继续放 `docs/`）；调研草案确认后也可落盘于此或 `.tple/user-cases.csv` |
+
+**记忆怎么用（编排必做，自然发现）：**
+
+1. Step 0/1 开始时：若工作根存在 `tple-memory.md`（兼容 `.tple/memory.md`）→ **先读**，当作本项目硬约束，与本 SKILL 通用规则叠加。
+2. 跑中/跑完：把**可复用**经验追加进去（注明日期与 slice）；断言细节可同时写进当次 `run-cases.mjs`。
+3. **禁止**把某站点业务断言（章节名、文案、产品特有 DOM）写回本 SKILL.md / 反模式表——那些属于项目记忆，不是通用 skill。
+
+**产物默认路径**（新建 slice 时优先）：
+
+- 验收：`.tple/<slice>-e2e/`（例：`.tple/issue-23-e2e/`）
+- 调研：`.tple/research-<域名>/`（例：`.tple/research-sellxagent.com/`）
+
+仓库若**已约定** `docs/<slice>-e2e/` 且在用，可继续沿用该路径；**新开跑默认 `.tple/`**。下文示例里的 `docs/<slice>-e2e` 与 `.tple/<slice>-e2e` 等价，以工作根内实际报告目录为准（`--dir`）。
+
 两种模式：
 
-- **验收模式**（默认）：有代码、有仓库，按 case 录屏验收，FAIL 走 auto-fix 改代码重测。
-- **调研模式**（产品调研）：只给网址、无代码，agent 探索站点后出 case 草案，**实际走一遍产品核心功能**，逐 case 录屏产出**调研报告**（使用场景、操作方法、交付结果）。**核心功能写操作（创建/编辑/生成）默认允许；真实支付/删除/大量注册/对外发送需用户明示**；不改本地项目内容，走不通的路径记为发现/限制，不进 auto-fix。模式判定见 Step 0。
+- **验收模式**（默认）：有代码、有仓库；编排锁定脚本后按 case 派发 subagent 录屏；FAIL 由编排 auto-fix 后重派。
+- **调研模式**（产品调研）：只给网址、无代码，编排探索出草案，确认后同样按 case 派发 subagent 录屏出调研报告。**核心功能写操作（创建/编辑/生成）默认允许；真实支付/删除/大量注册/对外发送需用户明示**；不改本地项目内容，走不通的路径记为发现/限制，不进 auto-fix。模式判定见 Step 0。
 
 ## 参数路由：`update`（自更新，优先于一切步骤）
 
@@ -45,37 +68,62 @@ node $SKILL_DIR/scripts/check-update.mjs --force   # 绕过 24h 缓存，拿真�
 ## 交付物
 
 ```
-docs/user-cases.csv               # 无表时：确认后新建；有表则筛选/回写 status
-docs/<slice>-e2e/                 # 或仓库约定目录
+tple-memory.md                    # 项目记忆（有则先读；跑中追加可复用经验）
+docs/user-cases.csv               # 无表时：确认后新建；有表则筛选/回写 status（可仍放 docs/）
+.tple/<slice>-e2e/                # 默认运行产物目录（或仓库已约定的 docs/<slice>-e2e/）
   index.html                      # 主报告（侧栏导航 + 每 case 区块）
   meta.jsonl                      # id|title|status|notes
-  runs.json                       # { id: { lastRanAt, runCount } } 每 case 最后跑时间与次数
+  runs.json                       # case 条目 { lastRanAt, runCount } + 可选顶层 usage
   cases.json                      # 报告文案（可由 csv 生成）
+  run-cases.mjs                   # 编排锁定的执行脚本
+  .tple-browser.json              # 浏览器套件状态（编排 CLI 维护）
   videos/
     01-xxx.mp4 / .webm / .png     # 每 case 视频 + 结束帧
     01-xxx-fail.png               # 可选中间失败态
 ```
 
-聊天里只回：报告路径、PASS/FAIL 汇总、异常 case。
+聊天里只回：报告路径、PASS/FAIL 汇总、异常 case；若更新了 `tple-memory.md` 可一句带过。
+
+## 执行架构（唯一模式，不可切换）
+
+TPLE **禁止**由单个 LLM 会话串行包办全部 case（长上下文会导致注意力发散、反复改同一大脚本）。唯一合法形态：
+
+| 角色 | 谁 | 职责 |
+|------|----|------|
+| **编排 agent（Orchestrator）** | 加载本 skill 的主会话 | Step 0–2.5；写并锁定一份 `run-cases.mjs` + `cases.json`；**按 case 串行派发** subagent；汇总 `meta.jsonl` / 媒体校验；Step 5 auto-fix（改代码）；重派失败 case 的 subagent；Step 6–7 采集 usage（多会话合计）+ build-report + 分发 |
+| **Case subagent** | 每个 case 一个**独立**短会话 | **只跑自己的 `CASE_ID`**：执行 `CASE_ID=<id> node run-cases.mjs`（或等价只跑该 id）；写本 case 的媒体 + 经 `logCase` 追加 meta/runs；结束回报 `SUBAGENT_DONE <id> <STATUS>` |
+| **Fixer** | 默认即编排 agent（可另起专用会话，但仍是「单点改代码」） | 只改目标仓库代码与（必要时）`run-cases.mjs` 中该 case 片段；**禁止**多个 subagent 同时改同一仓库 |
+
+**硬约束：**
+
+1. **串行派发**：同一时刻只跑一个 case subagent（避免互相 `pkill` / 抢 daemon）。禁止「主会话自己点完所有 case」替代派发。
+2. **Subagent 禁令**：禁止裸调 `agent-browser` / 手写 `ab()`；禁止 `close --all` / 按特征 `pkill`；禁止 `dashboard start|stop`；禁止改公共 `run-cases.mjs` 骨架 / 其他 case 分支 / `cases.json` 全局字段；禁止跑 `CASE_ID` 以外的 case；禁止 `build-report` / `collect-usage` / 改 skill 文档。浏览器操作**只**经 `createBrowser(reportDir).run(session, args)` / `closeSession(session)`（库会强制注入 profile、拒绝 headed/`close --all`/dashboard）。
+3. **套件级生命周期只归编排 CLI**：`node $SKILL_DIR/scripts/tple-browser.mjs suite-boot|login-*|suite-teardown`（内部才做 `close --all` + pkill + dashboard）。**禁止**每个 case 开始前再 purge。Subagent 结束只 `closeSession(caseId)`。
+4. **脚本锁定**：`run-cases.mjs` 由编排写好后须过 `check-run-cases.mjs` 再派发；subagent 默认只执行不改写。若录屏契约必须改脚本，回传原因由编排改完再重派该 case。
+5. **宿主适配**：用当前 agent 的「子 agent / Task / 独立 `opencode run` / Claude Agent」等能力派发；没有子 agent API 时，用**新开独立会话**（新 session 标题 `tple-case-<id>`）等价替代——仍须上下文隔离，禁止在主会话里假装跑完。
+
+派发提示词模板与 `CASE_ID` 约定见 [reference.md](reference.md)「编排与 case subagent」。
 
 ## 流程总览
 
 ```
 Task Progress:
-- [ ] 0. 模式判定：验收模式（默认）/ 调研模式（见下）
-- [ ] 1. 定 case 清单（有 csv 就筛；没有则按项目总结草案 → 用户确认 → 落盘 csv）
-- [ ] 2. 起环境、确认端口，清理残留 agent-browser，版本自检（落后仅提示、不阻塞），并开 dashboard（结束时 stop）
-- [ ] 2.5 登录态决策：检测到需登录 → 暂停询问用户（复用本地 Chrome profile / headed 手动登录 / 提供凭据 / 公开路径）
-- [ ] 3. 写 run-cases（原生 record 为主；过短回退分镜）
-- [ ] 4. 跑全量，写 meta.jsonl，用 ffprobe 验视频时长
-- [ ] 5. auto-fix loop：FAIL case → 分析 → 改代码 → 重测（最多 3 轮）【仅验收模式】
-- [ ] 6. build-report → index.html（必须用本 skill 模板）
-- [ ] 7. 分发（直接打开本地报告，或自行托管/上传）
+- [ ] 0. 模式判定 + 定位工作根；若有 `tple-memory.md` 先读【编排】
+- [ ] 1. 定 case 清单（有 csv 就筛；没有则按项目总结草案 → 用户确认 → 落盘 csv）【编排】
+- [ ] 2. 起环境、确认端口，版本自检，`tple-browser suite-boot`（清理+dashboard+状态文件）【编排】
+- [ ] 2.5 登录态决策 → `login-open` / `login-wait` / `login-done`（或 reuse mode boot）【编排】
+- [ ] 3. 编排写好并锁定 run-cases.mjs + cases.json；`check-run-cases` 通过后再派发
+- [ ] 4. 按 case 串行派发 subagent → 各写 meta/媒体；编排 ffprobe/媒体门闩汇总
+- [ ] 5. auto-fix：编排改代码 → 只重派 FAIL case 的 subagent（≤3 轮）【仅验收】
+- [ ] 6. 编排：多会话 usage 合计写入 runs.json → build-report → index.html；可复用经验追加 `tple-memory.md`
+- [ ] 7. 分发【编排】
 ```
 
 ---
 
 ### 0. 模式判定（先判，再走流程）
+
+先定 **PROJECT_ROOT**（验收=目标仓库根；调研=用户指定运行目录或 cwd）。若存在 `tple-memory.md` 或 `.tple/memory.md` → **先读完再定 case / 写断言**。
 
 | 信号 | 模式 |
 |------|------|
@@ -89,7 +137,7 @@ Task Progress:
 |------|----------|----------|
 | case 来源 | 仓库 csv / Issue / diff 总结 | agent 自主探索站点（open + snapshot 巡检 + 实际走核心功能）后总结草案 |
 | 环境 | 本地 dev server | 目标就是公网 URL，无需起服务 |
-| auto-fix | FAIL → 改项目代码重测（Step 5） | **不改本地项目内容**；Step 5 整体跳过，FAIL 记为「调研发现/限制」 |
+| auto-fix | 编排改代码后**重派** FAIL case subagent（Step 5） | **不改本地项目内容**；Step 5 整体跳过，FAIL 记为「调研发现/限制」 |
 | 断言 | 对照 expected 判 PASS/FAIL | 「路径是否可走通、行为是否符合描述」；允许 OBSERVE 观察项 |
 | 交付物 | 验收报告 | 调研报告（同模板）+ 可选「产品亮点/疑点」观察清单 |
 
@@ -187,7 +235,7 @@ node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>
 node $SKILL_DIR/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
-检查 node ≥18 / agent-browser / ffmpeg / ffprobe / 目标 web 可达；全部 ✓ 才进入后续步骤。
+检查 node ≥18 / agent-browser / ffmpeg / ffprobe / **ccusage** / 目标 web 可达；全部 ✓ 才进入后续步骤。另有软探测 `token-meter`（· 行）：用 ccusage→本地账本探测当前 agent 能否采集用量；不支持只提示、不阻断。
 
 **【调研模式】预期差异**：不需要本地 dev server；目标是公网 URL。401/403 会标为「可达但受限」——这是正常信号（需登录/反爬），如实带入报告与后续步骤，**不得**当成环境故障去「修」，也不得归因瞎猜。站点不可达时如实报告，不重试轰炸。
 
@@ -198,6 +246,7 @@ node $SKILL_DIR/scripts/install-deps.mjs   # 一键：按缺失清单安装 + �
 # 或按 check-env 打印的指引手动装：
 #   agent-browser → npm i -g agent-browser && agent-browser install（全平台）
 #   ffmpeg/ffprobe → brew install ffmpeg（macOS/Linux）或 winget install Gyan.FFmpeg（Windows）
+#   ccusage → npm i -g ccusage
 ```
 
 装完**重跑 `check-env`** 确认全部 ✓，再进入后续步骤。安装失败（无网络 / 无权限 / 目标 web 起不来）才停下来向用户如实报告，不要带病继续，也不要假装检查通过。
@@ -215,42 +264,28 @@ node $SKILL_DIR/scripts/check-update.mjs   # 本地版本 vs GitHub 最新 relea
   - **zip 安装**（无 .git）：下载最新 release zip 覆盖安装（保持根级布局、zip 内本就不含 CLAUDE.md）；用户本地新增的文件不受影响。有 license key 的用户可改走 landingpage `/download?license=` 下载后手动覆盖
 - 两种路径更新后脚本都会自动**重跑 `check-env.mjs` 复检依赖**（新版可能引入新依赖）；复检不过再走 install-deps 流程
 
-**可观测性：首次使用 agent-browser 前开 dashboard，套件结束后关掉（必须）：**
+**浏览器套件生命周期（唯一路径，禁止手写 close/pkill/dashboard）：**
 
 ```bash
-agent-browser dashboard start            # 起观测仪表盘（默认 :4848；被占用用 dashboard start --port <n>）
-open http://localhost:4848               # 打开（macOS；Windows 用 start http://localhost:4848）
-# ……跑完所有 case / 套件结束后：
-agent-browser dashboard stop
+# Step 2：套件启动（内部：close --all + 特征 pkill + dashboard start + 写 .tple-browser.json）
+# 报告目录默认 .tple/<slice>-e2e/；仓库已约定 docs/ 时改 --dir 即可
+# mode=none 公开路径；reuse=选项A；manual=选项B（phase=login，须再走 login-*）
+node $SKILL_DIR/scripts/tple-browser.mjs suite-boot --dir .tple/<slice>-e2e \
+  --mode none|reuse|manual [--profile …] [--chrome …] [--port 4848]
+open http://localhost:4848   # macOS；Windows: start http://localhost:4848
+
+# Step 7 / 套件结束（内部：close --all + pkill + dashboard stop；phase=torn_down）
+node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir .tple/<slice>-e2e
 ```
 
-start/stop 均幂等（重复 start 返回 already running、重复 stop 返回 not running），且不影响普通命令——失败不阻塞主流程。仪表盘用于实时观察 session/页面/命令轨迹，排查「页面没到位/ref 失效/录屏断帧」类问题时优先看它。
+- **禁止**每个 case 开始前再 purge / `close --all`（会拆掉登录 profile、诱发多开 Chrome）。
+- case 间只 `createBrowser(dir).closeSession(caseId)`。
+- dashboard 由 suite-boot/teardown 管；失败不阻塞主流程。排查「页面没到位/ref 失效/录屏断帧」优先看 :4848。
 
 - 确认 web / api 可访问；多 worktree 时**避开占用端口**，用 env 注入：
   - `WEB_URL` / `API_URL`
 - 破坏性探测（如 `kill -STOP` API）跑完必须 `kill -CONT`
-- **必须清理残留 agent-browser**（勿杀用户日常 Chrome）。跨平台（macOS / Linux / Windows 均支持，agent-browser 自带 win32 二进制）：
-
-```bash
-# 全平台必做：先关 daemon session，防串页到其他项目
-agent-browser close --all 2>/dev/null || true
-```
-
-再按平台清残留 Chrome（只杀带 agent-browser user-data-dir 特征的进程，勿伤用户浏览器；`--profile <名字>` 复制出的 profile 目录特征是 `agent-browser-profile-`，两个都要杀）：
-
-```bash
-# macOS / Linux
-pkill -f 'user-data-dir=.*/agent-browser-chrome-' 2>/dev/null || true
-pkill -f 'user-data-dir=.*/agent-browser-profile-' 2>/dev/null || true
-sleep 1.5
-```
-
-```powershell
-# Windows（PowerShell）：按命令行特征精确杀 agent-browser 的 chrome.exe（两类 user-data-dir 特征）
-powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | Where-Object { $_.CommandLine -like '*agent-browser-chrome-*' -or $_.CommandLine -like '*agent-browser-profile-*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
-```
-
-套件开始时清一次；**每个 case 开始前再清一次**（上一 case 的 STOP API / 改 viewport 易污染 screencast）。
+- 派发 subagent 时注入 `TPLE_SKILL_DIR=$SKILL_DIR`（run-cases import 库用）
 
 依赖：`agent-browser`、`ffmpeg`、`ffprobe`、Node 18+。
 
@@ -262,31 +297,41 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 
 触发后**暂停流程**，向用户说明检测到的信号，并让用户在以下选项中选（不要替用户静默决定）：
 
-| 选项 | 做法 | 适用 |
+| 选项 | 做法（必须走 `tple-browser`，禁止手拼 flag） | 适用 |
 |------|------|------|
-| **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出本地 Chrome profile 供用户选择；选定后，**该套件后续所有 agent-browser 命令都带** `--profile "<名字>"` + `--executable-path "<系统 Chrome 可执行路径>"`（macOS 默认 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`） | 用户本地 Chrome 已登录目标站点（最常见） |
-| **B. headed 引导手动登录** | `--headed --profile <新建临时目录>` 打开登录页，用户手动完成登录（含 2FA/SSO）；轮询验证登录成功后，后续命令继续带 `--profile <该临时目录>` 续跑（已实测：验证码场景整条链路可用，轮询首选 `get url`） | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
-| **C. 连接用户真实浏览器（人机检测场景）** | 起带 CDP 调试端口的 Chrome（独立临时 profile）→ **先做一次预检调用完成权限握手**（首次弹「允许远程控制」，用户确认后不再出现）→ 确认后才进轮询/录屏主流程；用 `agent-browser connect <ws-url>` 接入，见 [reference.md](reference.md)「选项 C」 | 登录/生成路径被**人机检测门闩**拦死（Cloudflare turnstile 等），需要人在浏览器手动完成、agent 同上下文续操作 |
-| 提供凭据 | 用户给出账号密码，用 `fill` 登录（凭据不落报告正文，env 只写「账号：用户提供」） | 用户明示愿意提供 |
-| 放弃登录 | 只走公开路径，报告 lede/env 标注「未登录态」 | 用户不想登录或调研模式默认 |
+| **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出 → 用户选定后：`suite-boot --dir … --mode reuse --profile "<名>" [--chrome <系统Chrome>]`（脚本写入状态并强制后续每条命令注入 profile + executable-path） | 用户本地 Chrome 已登录目标站点（最常见） |
+| **B. headed 引导手动登录** | `suite-boot --mode manual` → `login-open --url …` → 用户在 headed 窗完成登录 → `login-wait --ok-url-regex …` → `login-done`（phase→run，**此后 headed 永久拒绝**；case 无 headed、同 profile） | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
+| **C. 连接用户真实浏览器（人机检测场景）** | `tple-browser` 的 `loginMode=cdp` **本期未实现**（suite-boot 会拒）；仍按 [reference.md](reference.md)「选项 C」手工 CDP 流程，并在报告注明。后续版本再收口 | 登录/生成路径被**人机检测门闩**拦死 |
+| 提供凭据 | 用户给出账号密码；`suite-boot --mode none` 后用 `createBrowser().run` 做 `fill` 登录（凭据不落报告正文） | 用户明示愿意提供 |
+| 放弃登录 | `suite-boot --mode none`；只走公开路径，报告 lede/env 标注「未登录态」 | 用户不想登录或调研模式默认 |
 
 **关键约束：**
 
-- **选项 A 必须带 `--executable-path` 指向系统真实 Chrome**：agent-browser 默认启动 Chrome for Testing，其 macOS Keychain 加密密钥（`Chromium Safe Storage`）与真实 Chrome（`Chrome Safe Storage`）不同，复制过来的 v10 加密 cookie 会**静默解密失败**、登录态全丢。机制与实测证据见 [reference.md](reference.md)「登录态决策」
-- **选项 A/B 的 `--profile` flag 每条命令都要带**（daemon 按命令参数启动浏览器，漏带即回到无登录态的默认 session）
-- **选项 C 必须先预检**：走「用户真实浏览器」分支时，先做一次普通调用完成权限握手（首次连接 Chrome 弹「允许远程控制」，用户确认一次后不再出现），**确认后再进录屏/轮询主流程**。严禁用 `--auto-connect` 重试循环等就绪——M136+ 下发现不了端口，且每次失败都自动拉起浏览器，权限确认框会连弹打断用户
-- 选定登录态后，先在目标站验证登录成功（可观察信号：用户头像元素 / 登录态 cookie / 跳转后的 URL）再进 Step 3；验证不过就回报用户，不带病开跑
-- **不要用 `--auto-connect` + `state save` 导出 cookie 来复用登录态**：那是 browser 级 `Network.getAllCookies`，多 profile 场景会把所有 profile 的 cookie 混在一起，同站点 cookie 互相覆盖，登录态归属不可控（见反模式表）
-- **站点有强同意弹窗（Terms & Conditions / Cookie 横幅等）时，默认提示用户**：「弹窗同意状态存在客户端存储、绑定当前 profile 副本；`--profile <名字>` 每次启动会重新复制新副本，同意状态从『未同意』重置。尽量一次会话跑完所有需要该同意的 case，有状态弹窗在同一实例内处理，不要遇阻就重启浏览器。」
-- 报告 env 里注明所用登录态，如：`登录态：复用本地 Chrome profile "working"` / `登录态：headed 手动登录` / `未登录态`
+- **选项 A/B 的 profile 注入由库强制**，禁止在 run-cases 手写 `spawnSync("agent-browser"…)` 或「为躲 DevTools 删掉 --profile」。漏带即丢登录态——脚本层直接 throw。
+- **选项 B：headed 仅 `login-open` 一次**；`login-done` 会 **purge 全部 daemon + 同 profile 强制 headless（`--headed false` + `--headless=new`）冷启唯一 `tple-keepalive`**。manual/reuse 下**整套 case 共用该 session**（同一 `user-data-dir` 不能并行多 session，否则 Chrome exit 21 + daemon 膨胀）。探活 `probe`→自动映射 keepalive。`open` 后 settle 只切 tab / 同 tab `location.assign`，**禁止二次 open**。目录型 profile 冷启前清 `Default/Sessions`。
+- **选项 C 必须先预检**（见 reference）；严禁 `--auto-connect` 重试循环。
+- 选定登录态后，先验证登录成功再进 Step 3；验证不过就回报用户，不带病开跑。
+- **不要用 `--auto-connect` + `state save` 导 cookie 复用多 profile 登录态**（见反模式表）。
+- **强同意弹窗**：尽量同一 profile 实例内处理；不要遇阻就 suite 级重启。
+- 报告 env 注明登录态：`复用本地 Chrome profile "…"` / `headed 手动登录` / `未登录态`
 
 【调研模式】同一决策门闩：无凭据且用户不选 A/B/C 时，维持原行为——只走公开路径，并在报告 lede/env 标注「未登录态调研」。用户选择复用/手动登录/连接真实浏览器后按选项 A/B/C 执行，登录态同样不落报告正文。
 
 ---
 
-### 3. 逐 case 执行与录屏（关键）
+### 3. 编排准备 `run-cases`（锁定后再派发）
+
+本步由**编排 agent**完成，写完即锁定，再进入 Step 4 派发。
+
+1. 在工作根创建报告目录 `.tple/<slice>-e2e/`（或已约定的 `docs/<slice>-e2e/`：含 `videos/`、空 `meta.jsonl`、初始 `runs.json`）；Step 2 已写出 `.tple-browser.json`
+2. 写出标准 `run-cases.mjs`：**必须** `import { createBrowser } from "$SKILL_DIR/scripts/lib/tple-browser.mjs"`（路径写绝对或经 `TPLE_SKILL_DIR`）；用 `browser.run(caseId, […])` / `closeSession`；含 `logCase` 双写；支持 `CASE_ID=<id>` 单跑；禁止本地 `ab()`/`purge`/`spawnSync("agent-browser"`
+3. 写出 `cases.json`（uc/steps/expected）
+4. **锁定前门闩**：`node $SKILL_DIR/scripts/check-run-cases.mjs --dir docs/<slice>-e2e`（exit 0 才派发）
+5. 派发时注入 `TPLE_SKILL_DIR=$SKILL_DIR`；录屏契约 / `WEB_URL` 写进脚本或 env
 
 #### 默认录屏策略：原生 `agent-browser record`（分镜仅作回退）
+
+（编排写入脚本；**case subagent 执行时遵守同一契约**。）
 
 原生 record **可用**。曾出现「墙钟 30s、`record stop` 卡 ~20s、落盘只有 ~1s」时，根因通常是**残留 agent-browser Chrome 污染**，不是 record 本身不能用。单独 case 在清理后可稳定录到 6–12s。
 
@@ -297,7 +342,7 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='ch
 3. **防御性 `record stop`（幂等：无录制时返回 `No recording in progress` 不报错）→ `record start <path.webm>`**。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒空壳长视频——每 case 开头先兜底一次 `record stop`
 4. 登录态需写回 token 时用 `eval` 写 localStorage（**不用 `open` 刷新页面**）；操作只做点击/填表，页间移动用**点击链接**（`click @ref`）或 `back`；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
 5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
-6. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先清理残留进程（含 `close --all`）重试一次原生**，仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
+6. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先只 `close` 本 case `--session` 后重试一次原生**（subagent **不得** `close --all` / 全局 pkill；需要套件级清理时回报编排），仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
 
 **录中点击回退（SPA 因 `record start` 重挂载）**：`record start`（视口/焦点事件）可能触发 React 等 SPA 重渲染、DOM 重建——录前有效的 ref/eval 全部落空（元素「消失」、ref 几秒内过期）。ref 点击录中失败时改**轮询 eval 点击**：循环 ≤30 次 `{ eval 找元素；找到就 click；等 200ms }`，等重挂载完成后点中（实测第 8~9 次命中）。不要因此停止录制或重启浏览器。代码见 [reference.md](reference.md)「原生 record 成功契约」
 
@@ -321,15 +366,15 @@ ffprobe -v error -count_frames -select_streams v:0 \
 #### agent-browser 操作要点
 
 - **写脚本前先过一遍命令速查**（[reference.md](reference.md) 开头「最小命令速查」，或 `agent-browser skills get core`）：`@` 只配 ref（`@e3`）、CSS 选择器不带 `@`、`eval` 的 JS 用双引号包裹、读文本用 `get text body`（没有裸 `body` 命令）
-- **每 case 独立 `--session`**，结束 `close`；case 前 `purge` 残留进程（含 `close --all`）
+- **浏览器只经 `createBrowser`**：`browser.run(caseId, ["open", url])` 等；库自动 `--session` + `--profile`。结束 `browser.closeSession(caseId)`。套件级清理**只** `tple-browser suite-boot|suite-teardown`
 - **输入用 `fill @ref text`**（自带清空）；失败再用页面内设 value + `input`/`change` 事件  
   - **禁止** `press Meta+a` / `Cmd+A`：按键可能漏到 macOS 前台（曾误出「关于本机」等系统窗）
-- 登录态：缓存 token；`record start` 后必须写回。若 Step 2.5 选了选项 A/B，该套件**每条命令都要带**对应 `--profile`（选项 A 另带 `--executable-path`）flag，漏带即丢登录态
+- 登录态：缓存 token；`record start` 后必须写回。选项 A/B 的 profile 由 `.tple-browser.json` + 库注入，**禁止**漏带或中途删 profile
 - 页面变化后重新 `snapshot -i` 再点 ref
 - **操作前双通道判断（screenshot + DOM）**：决策点（导航后、关键/破坏性操作前、DOM 与预期不符时）先 `screenshot` 看页面再 `snapshot -i` 拿 ref，**综合判断后动手**——截图负责「页面什么状态、什么可见、有无遮罩/loading/灰态/canvas 内容」，DOM 负责「用哪个 ref 操作」。两通道冲突时信截图的可见性（DOM 有按钮但被 modal 盖住 → 先关遮罩，不硬点 ref）、信 DOM 的可操作性。a11y 树看不透（canvas/自绘控件）用 `screenshot --annotate`，编号 `[N]` 对齐 `@eN`。判断性截图放 `record start` **之前**，录中仍只做 click/fill/wait（见录屏成功契约）；决策点截，不逐原子操作截（多模态 token/时延成本）。展开见 [reference.md](reference.md)「操作前双通道判断」
 - 断言：`get text body` / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
 - **断言防假阳性**：命令报连接错误 / 页面为空时，判 BLOCKED 或重试，不能按「数据无变化」判 PASS（曾把 eval 连接失败误判成校验生效）
-- 同步更新 `runs.json`：该 case 的 `lastRanAt`（ISO）与 `runCount`（累加）；报告展示「最后跑 / 共跑 N 次」
+- 同步更新 `runs.json`：该 case 的 `lastRanAt`（ISO）与 `runCount`（累加）；报告展示「最后跑 / 共跑 N 次」。顶层 `usage` 在出报告前另写（见 Step 6），`logCase` 不得抹掉它
 - 关键帧截图须可点击放大（模板已带 lightbox，勿去掉）
 - 关键帧仍可 `screenshot`（报告 poster / 回退分镜），但不要用 `Meta+*` 系统快捷键
 
@@ -369,19 +414,33 @@ agent-browser click @ref        # 或鼠标坐标点击
 
 ---
 
-### 4. 跑全量与校验
+### 4. 串行派发 case subagent 与校验
+
+编排 agent **不得**在本会话内逐 case 点完浏览器；必须为每个 case 派发独立 subagent（或独立会话）。
 
 ```bash
-node docs/<slice>-e2e/run-cases.mjs
-# 或 CASE_LIMIT=2 冒烟
+# subagent 内唯一执行入口（示例）
+CASE_ID=01-login node docs/<slice>-e2e/run-cases.mjs
 
+# 编排在全部 subagent 结束后做媒体校验
 for f in docs/<slice>-e2e/videos/*.mp4; do
   ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$f"
 done
 ```
 
-- 任一视频缺失 / duration≈0 → 修该 case 后重跑，勿只改 HTML
+**派发循环（编排）：**
+
+```
+for each case id in 清单（按 id 排序）:
+  1. （可选）轻量确认无残留：仅 close 已知死 session；勿在 subagent 仍可能存活时盲目 pkill
+  2. 派发 subagent，提示词含：CASE_ID、title、steps/expected、报告目录、SKILL_DIR、禁令、WEB_URL/登录态 flag
+  3. 等待结束；断言产出：meta.jsonl 有该 id 一行（pipe 格式）；videos/<id>.mp4|webm|png 至少满足媒体门闩
+  4. 若缺媒体 / meta 格式错误 → 编排修复脚本或补派，不得默认可过
+全部完成后编排跑 ffprobe 汇总；缺视频或 duration≈0 → 重派该 case，勿只改 HTML
+```
+
 - AuthGate 类 case 后确认 API 未停在 `STOP`
+- Subagent 回报格式：`SUBAGENT_DONE <id> <PASS|FAIL|BLOCKED|OBSERVE>`
 
 **status 状态集**：验收模式用 `PASS | FAIL | BLOCKED`；调研模式另允许 `OBSERVE`（观察项：不是对错判定，是产品亮点/疑点记录，如「定价页未展示退款政策」）。`meta.jsonl` 写入规则不变（一行一记录，notes 清洗），见 [reference.md](reference.md)。
 
@@ -389,11 +448,11 @@ done
 
 ---
 
-### 5. auto-fix loop（全自动修复 FAIL case）【仅验收模式】
+### 5. auto-fix loop（编排改代码 + 重派 FAIL subagent）【仅验收模式】
 
 **调研模式跳过本步骤**：不改本地项目内容；目标站上的操作按行为规范的同意层执行（核心功能默认、真实/对外动作需明示）。FAIL case 保留原状态与 notes，直接进 Step 6 生成调研报告；「走不通的原因」本身就是调研产出。
 
-跑完 Step 4 后，如果 `meta.jsonl` 中存在 `FAIL` 状态的 case，进入自动修复循环。
+跑完 Step 4 后，如果 `meta.jsonl` 中存在 `FAIL` 状态的 case，由**编排 agent（或单一 Fixer 会话）**进入自动修复循环。**禁止**让失败 case 的 subagent 自己改业务代码。
 
 #### 循环逻辑
 
@@ -404,11 +463,11 @@ while FAIL count > 0 and round < 3:
     for each FAIL case:
         1. 收集证据（见下）
         2. 分析根因
-        3. 用 Edit/Write 改项目代码
+        3. 编排用 Edit/Write 改项目代码（必要时只改 run-cases 中该 case 片段）
         4. 记录本轮到 fixLog[]（必填 bug + fix；并更新 case 级 bug/fix 汇总）
     5. 重启 dev server（如需要）
-    6. 仅重跑本轮改过的 FAIL case（不跑全量）
-    7. 更新 meta.jsonl
+    6. 仅重派本轮涉及的 FAIL case subagent（CASE_ID=…；不跑全量、不并行）
+    7. 汇总更新后的 meta.jsonl
     8. 如果所有 case 都 PASS → break
     9. 如果某个 case 连续 2 轮 FAIL 且 notes 无变化 → 标 BLOCKED，不再尝试
 ```
@@ -426,10 +485,10 @@ while FAIL count > 0 and round < 3:
 
 按优先级：
 
-1. **agent-browser 输出**：run-cases 脚本的 stderr/stdout，特别是 selector not found、timeout、console error
+1. **agent-browser 输出**：该 case subagent 日志 / run-cases stderr/stdout，特别是 selector not found、timeout、console error
 2. **失败帧截图**：`videos/{id}-fail.png`（如果有）
 3. **视频末帧**：`videos/{id}.mp4` 的最后一帧（用 ffmpeg 提取）
-4. **页面快照**：FAIL 时立即 `agent-browser snapshot` 拿到的 a11y tree 文本
+4. **页面快照**：FAIL 时 subagent 或编排立即 `agent-browser snapshot` 拿到的 a11y tree 文本
 5. **case 的 expected 字段**：对比「期望看到什么」vs「实际看到什么」
 
 #### 修复记录（fixLog）
@@ -474,6 +533,25 @@ while FAIL count > 0 and round < 3:
 
 ### 6. 生成 HTML（必须用本 skill 模板）
 
+**出报告前：写入本次 TPLE 的 token 用量**（验收 / 调研均适用）。用量 = **编排会话 + 所有 case subagent 会话**的合计（含 auto-fix 重派），不是「最后一个 session」。
+
+```bash
+# 若宿主能一次取到合计（例如仅一条编排会话且未真正派发——非法，应避免）：
+node $SKILL_DIR/scripts/collect-usage.mjs --dir docs/<slice>-e2e
+
+# 多 subagent 时：对每个 case session / 编排 session 分别采集后把 input/output/cacheRead/total 相加写入 runs.json.usage
+# source 用 ccusage / transcript / opencode-local 等真实来源；可在 note 字段标明 session 列表
+# 嵌套宿主误判时加：--agent opencode|claude --cwd <项目根>
+```
+
+降级顺序（**禁止估算、禁止从 case 数倒推**）：
+
+1. **ccusage**（优先）：按 agent 取 session 列表，**累加**本次编排标题 / `tple-case-*` / 派发时记录的 sessionId
+2. **本地账本**：各 session 本地 usage 相加 → `source: "transcript"` / `"opencode-local"`（合计时可在 `usage.note` 写 `sum of N sessions`）
+3. **不支持**：拿不到任何会话计量 → **不写** `runs.json.usage`（报告头省略用量行；禁止编造，也不渲染「不支持」提示）
+
+字段形如 `{ input, output, cacheRead, total, source }`（有用量时至少 `total` + `source`）。`usage` 是**编排 + 全部 case subagent（含重派）**合计，不是单个 case。实现见 [reference.md](reference.md) 与 `scripts/lib/token-usage.mjs`。
+
 **更稳的方案：视觉以仓库内文件为准，禁止临场重设计。**
 
 | 文件 | 作用 |
@@ -515,7 +593,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 #### Design 硬约束（与当前验收 HTML 一致）
 
 - **布局**：`shell` = 左侧 sticky 导航 280px + 右侧 main；`<960px` 单列
-- **信息结构**：brand → CASES 锚点列表 → h1 / lede / meta → 汇总 chips → 每 case 卡片（左文案右媒体）
+- **信息结构**：brand → CASES 锚点列表 → h1 / lede / meta（含可选 Token 用量行）→ 汇总 chips → 每 case 卡片（左文案右媒体）
 - **色板**：`--ink #1c1917`、`--bg #f5f5f4`、`--accent #9a3412`；PASS 绿 / FAIL 红 / BLOCKED 琥珀
 - **字体**：IBM Plex Sans + Noto/PingFang；备注用 mono + `.notes` 浅底块
 - **背景**：双径向暖灰渐变叠在 stone 底上（见 CSS），不要改成紫渐变 / 纯白扁平 / 深色主题
@@ -529,7 +607,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 
 ### 7. 分发
 
-报告目录 `docs/<slice>-e2e/` 是自包含的（CSS 内联、视频相对路径），直接本地打开 `index.html` 即可验收。【调研模式】报告目录建议用 `docs/research-<域名>/`，与验收报告区分。
+报告目录（默认 `.tple/<slice>-e2e/`，或仓库约定的 `docs/...`）是自包含的（CSS 内联、视频相对路径），直接本地打开 `index.html` 即可验收。【调研模式】报告目录建议用 `.tple/research-<域名>/`，与验收报告区分。跑中沉淀的可复用经验写入工作根 `tple-memory.md`，不要改 SKILL.md。
 
 如需分享：把整个目录（含 `videos/`）压缩或上传到任意静态托管。注意保持 `videos/` 相对路径不变；若托管端需要绝对路径，需自行调整 HTML 中的引用。
 
@@ -537,18 +615,24 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 
 ## 质量门槛（完成前自检）
 
-- [ ] 开跑前 / 每 case 前已清理残留 agent-browser（含 `agent-browser close --all`）
+- [ ] 以编排 + 每 case 独立 subagent 执行（主会话未包办全部 case）
+- [ ] 已定位工作根；若有 `tple-memory.md` / `.tple/memory.md` 已先读；本趟可复用经验已追加（未把站点业务断言写进 SKILL.md）
+- [ ] 报告目录在 `.tple/<slice>/`（或仓库已约定的 `docs/...`）
+- [ ] 编排已跑 `tple-browser suite-boot`（存在 `.tple-browser.json`）；套件结束已 `suite-teardown`；**未**在每个 case 前 purge
+- [ ] subagent / run-cases **未**裸调 `agent-browser`、未手写 `ab()`/`purge`；只用 `createBrowser().run` / `closeSession`
 - [ ] 环境阶段跑过 `check-update.mjs` 版本自检；落后时已提示用户并可跳过（未静默更新、未因未更新中止流程；--apply 前经用户确认）
-- [ ] 套件期间 dashboard 开着（首次用 agent-browser 前 `dashboard start`），套件结束后 `dashboard stop`
-- [ ] 检测到需登录时走了 Step 2.5 决策门闩（未静默选路径）；选项 A 所有命令带 `--profile` + `--executable-path`；选项 B 登录成功已验证后再续跑
-- [ ] run-cases.mjs 包含 logCase 函数（同时写 meta.jsonl + runs.json），未用简化版 writeMeta 替代
+- [ ] dashboard 由 suite-boot/teardown 管理（未在 case 中反复 start/stop）
+- [ ] 检测到需登录时走了 Step 2.5；选项 A 用 `--mode reuse`；选项 B 走 `login-open`→`login-wait`→`login-done` 且登录后无 headed
+- [ ] `check-run-cases.mjs --dir …` 通过后再派发；`run-cases` 含 logCase + `CASE_ID`；subagent 默认不改公共脚本
 - [ ] 多数 case 为原生录屏且 duration ≥ 4s；回退 case 在日志里标明
 - [ ] 无 `Meta+a` 等易泄漏到系统的快捷键
 - [ ] 决策点（导航后/关键操作前/DOM 与预期不符）已先 screenshot + snapshot 双通道判断再动手；判断性截图在 `record start` 之前
 - [ ] HTML 可双击打开，侧栏跳转、视频可播；样式来自 `assets/report.css`
+- [ ] 出报告前写入多会话合计 `usage`（拿不到则省略、不写 unsupported）；**未估算、未从 case 数倒推**
 - [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
 - [ ] 报告写明录屏方式（原生为主 / 个别分镜回退）
+- [ ] FAIL 的 auto-fix 由编排/单一 Fixer 改代码后重派 subagent，非多 subagent 并行改仓
 - [ ] 【调研模式】核心功能已实际走一遍；真实支付/删除/大量注册/对外发送均经用户明示（未明示的停在提交前一步）
 - [ ] 【调研模式】无凭据时报告明确标注未登录态；有凭据时凭据未写入报告正文
 - [ ] 【调研模式】验证码/付费墙/反爬记 BLOCKED 并如实记录现象，未尝试绕过
@@ -558,7 +642,15 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 
 | 不要 | 要 |
 |------|-----|
-| 残留 Chrome 不清理就开录 | suite / 每 case 前清理 agent-browser 残留（macOS/Linux `pkill`、Windows PowerShell 按特征杀） |
+| 单 LLM 会话串行包办全部 case（长上下文硬扛） | 编排锁定脚本 + 每 case 独立 subagent 串行派发 |
+| case 里裸 `agent-browser` / 手写 `ab()` / 漏 `--profile` | `createBrowser(dir).run`；profile 由状态文件强制注入 |
+| case subagent 里 `close --all` / 全局 pkill / `dashboard *` | 只 `closeSession`；套件用 `suite-boot` / `suite-teardown` |
+| 每个 case 开始前 purge / 登录后继续 headed | headed 仅 `login-open` 一次；`login-done` 后 headless + 同 profile |
+| 为躲 DevTools「ignored」而删掉 `--profile` | 冲突时只允许编排重新 `suite-boot`（带对 profile），禁止漏 flag |
+| subagent 改公共 `run-cases.mjs` / 跑别人的 CASE_ID | 只执行 `CASE_ID=<自己>`；脚本变更回传编排 |
+| 多个 subagent 同时改业务代码 | 单一 Fixer/编排改代码后重派 |
+| 残留 Chrome 不清理就开录（套件级） | 编排 `suite-boot`（含 close --all + 特征 pkill） |
+| 跳过 `check-run-cases` 就派发 | 锁定后必须 exit 0 再派发 |
 | 检测到落后版本就静默自动更新（`--apply` 不经确认直接跑） | 先提示「当前 vX / 最新 vY」让用户选更新或跳过；确认后才执行更新，跳过照常继续 |
 | 未确认就在有本地未提交改动的 skill 仓库上 `git pull` 强拉 | `--apply` 自带脏检查会拒绝；有改动先让用户 commit/stash，或改 zip 覆盖到新目录 |
 | 每次调用 TPLE 都强制联网查版本 / 版本查不到就中止流程 | 24h 缓存不重复联网；离线/限流静默降级继续主流程（自检永远退出码 0） |
@@ -566,11 +658,13 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 信 `✓ Done` 不验点击效果 | 点击前查元素在不在视口内（不在先 `scrollintoview`），点击后截图/查 URL/查 API 验效果 |
 | 视口外的按钮直接 `click @ref` | 先 `scrollintoview @ref` 再点；ref 点击不自动滚动，视口外点击静默落空 |
 | 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |
-| 因一次 ~1s 空壳就放弃原生 | 先清理进程，按成功契约重试；仍短再分镜回退 |
+| 因一次 ~1s 空壳就放弃原生 | 先按成功契约重试（subagent 不全局杀进程）；仍短再分镜回退 |
 | `record start` 后再 `open` 目标页（0.26.0 断帧捕获，产出空壳 webm） | 录前 open + wait 就位页面再 start；录中只用点击/`back` 移动，token 用 `eval` 写回 |
+| `record start` 后假定登录态仍在（新建 context 常丢 localStorage） | 录前 `state save`，录后立刻 `state load` + 回目标页（或按站点写回 token） |
+| 把某站点业务断言/文案坑写进 SKILL.md 反模式表 | 写入工作根 `tple-memory.md`（或当次 `run-cases` 断言）；SKILL 只留通用规则 |
 | CSS 选择器 `click` 返回 `✓ Done` 就当点上了 | 部分页面会静默落空；点击后验证 DOM/URL 效果，不过就改 snapshot ref 点击重试 |
 | 自定义组件点击无效就归因风控、反复重试 | 元素是自定义组件（tagName 带连字符 / `Ks*` 类名）→ 改坐标鼠标点击：`eval` 拿中心坐标 + `mouse move <x> <y>` → `mouse down` → `mouse up`（CDP 可信事件） |
-| 遇阻就重启浏览器（`close --all` + `pkill` 当万能药） | 有状态弹窗（Terms/引导页）在**同一实例内**处理（坐标点击）；`--profile <名字>` 每次启动都重新复制 profile，客户端存储的同意状态从「未同意」重置，用户手动点过的 Accept 白费；重启只用于残留进程污染 |
+| 遇阻就重启浏览器（`close --all` + `pkill` 当万能药） | 有状态弹窗（Terms/引导页）在**同一实例内**处理（坐标点击）；`--profile <名字>` 每次启动都重新复制 profile，客户端存储的同意状态从「未同意」重置；套件级重启只由编排做 |
 | 被中断的录制不管，直接下一次 `record start` | 每 case 开头防御性 `record stop`（幂等）；否则报 `Recording already active`，最终 `record stop` 产出上百秒空壳 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
@@ -579,10 +673,12 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 跑完不管 API STOP | 始终 `kill -CONT` |
 | 手写新 HTML 主题 / Tailwind 看板风 | 只用本 skill 的 css + templates |
 | 只写 meta.jsonl、跳过 runs.json | 用标准 logCase 同时写两个文件（报告展示「最后跑 / 共跑 N 次」） |
-| FAIL 后人工分析、手动改代码 | 用 Step 5 auto-fix loop 自动修复（最多 3 轮） |
+| 估算 token / 只采最后一个 session 当整次用量 | 编排 + 全部 case subagent usage 合计；禁止编数字 |
+| FAIL 后人工分析、手动改代码 | 用 Step 5：编排 auto-fix + 重派 subagent（最多 3 轮） |
 | 无限制循环修复同一个 case | 连续 2 轮无进展标 BLOCKED，刹车退出 |
 | `click @css-selector` / eval 不加引号就开跑 | 先看 reference.md「最小命令速查」：`@` 只配 ref，eval JS 双引号包裹 |
-| 清理只 `pkill` 不 `close --all` | 先 `agent-browser close --all` 再 pkill，否则 daemon 残留 session 串页到别的项目 |
+| 清理只 `pkill` 不 `close --all`（编排套件级） | 只用 `tple-browser suite-boot|teardown`（内部先 close --all 再 pkill） |
+| 每个 case / 每次重试都 `dashboard stop/start` | dashboard 套件级各一次；与 browser session 独立，stop 不清 cookie |
 | 断言命令连接失败仍按「无变化」判 PASS | 数据拿不到判 BLOCKED/重试，防假阳性 |
 | 检测到登录墙/401/403 仍静默走公开路径或静默猜登录方式 | 停下走 Step 2.5：列选项问用户（复用 profile / headed 手动登录 / 提供凭据 / 公开路径） |
 | 用 `--auto-connect` + `state save` 导 cookie 复用多 profile 登录态 | `Network.getAllCookies` 是 browser 级，混入所有 profile 的 cookie、归属不可控；复用登录态用 `--profile <名字>`（见 reference.md「登录态决策」） |
@@ -599,8 +695,12 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 
 - `agent-browser` — 浏览器操作与录屏（公网 npm 包：`npm i -g agent-browser`）
 - `ffmpeg` / `ffprobe` — 视频处理（转码、分镜 concat、poster 提取、时长校验）
-- Node.js 18+ — run-cases / build-report / check-env 脚本
+- `ccusage` — session token 用量采集（`npm i -g ccusage`；出报告前 `collect-usage.mjs`）
+- Node.js 18+ — run-cases / build-report / check-env / tple-browser 脚本
 - `curl` — check-env 探测目标 web 可达性（macOS/Linux 自带）
 
 运行前检查：`node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>`
 版本自检（非阻塞）：`node $SKILL_DIR/scripts/check-update.mjs`（落后提示 + 确认后 `--apply`）
+浏览器套件：`node $SKILL_DIR/scripts/tple-browser.mjs suite-boot|login-*|suite-teardown --dir …`
+run-cases 闸：`node $SKILL_DIR/scripts/check-run-cases.mjs --dir docs/<slice>-e2e`
+用量采集：`node $SKILL_DIR/scripts/collect-usage.mjs --dir docs/<slice>-e2e`（build-report 之前）
