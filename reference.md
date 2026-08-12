@@ -111,7 +111,7 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 ## commands.jsonl
 
-与 `meta.jsonl` / `runs.json` 同目录。`tple-browser` 每执行一条 `agent-browser` 命令，就追加一行 JSON，供跨机器排障和审计；它不进入 HTML 报告，避免淹没 case 级叙事。
+与 `meta.jsonl` / `runs.json` 同目录。`tple-browser` 每执行一条 `agent-browser` 命令，就追加一行 JSON，供跨机器排障和审计。HTML 报告会在各 case 卡片中展示精简审计摘要（命令数、失败数、关键命令序列、脱敏状态与文件链接）；完整流水仍只保留在本文件，避免淹没 case 级叙事。
 
 ```json
 {"ts":"2026-08-12T04:00:00.000Z","phase":"run","session":"01-login","argv":["--session","01-login","open","https://example.com"],"ok":true,"status":0,"durationMs":328,"out":"https://example.com","err":""}
