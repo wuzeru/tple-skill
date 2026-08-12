@@ -153,7 +153,10 @@ export function suitePurge(extraProfilePath = "") {
       { timeout: 15000 },
     );
   } else {
-    spawnSync("pkill", ["-f", "agent-browser-darwin"], { timeout: 10000 });
+    // macOS / Linux 二进制名不同；pkill -f 按正则匹配
+    spawnSync("pkill", ["-f", "agent-browser-(darwin|linux)"], {
+      timeout: 10000,
+    });
   }
   if (process.platform === "win32") {
     spawnSync(

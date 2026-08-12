@@ -144,20 +144,14 @@ const USAGE_SOURCE_LABEL = {
   "opencode-local": "opencode 本地",
   ccusage: "ccusage",
   "agent-self-report": "agent 自报",
-  unsupported: "不支持",
 };
 
-const UNSUPPORTED_USAGE_LINE = "Token 用量：当前 agent 不支持 token 消耗采集";
-
-/** 报告头用量行；无 usage 返回 ""；unsupported 显示固定文案 */
+/** 报告头用量行；无 usage / unsupported 返回 ""（省略，不渲染） */
 function formatUsageMeta(usage) {
   if (!usage || typeof usage !== "object" || Array.isArray(usage)) return "";
   const source = String(usage.source || "").trim();
-  if (source === "unsupported") {
-    return usage.message
-      ? `Token 用量：${String(usage.message)}`
-      : UNSUPPORTED_USAGE_LINE;
-  }
+  // 与「拿不到外部事实就省略」一致；collect-usage 也不再写入 unsupported
+  if (source === "unsupported") return "";
 
   const total = Number(usage.total);
   if (!Number.isFinite(total)) return "";

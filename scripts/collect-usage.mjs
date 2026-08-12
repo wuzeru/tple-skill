@@ -7,7 +7,7 @@
  *   node collect-usage.mjs --probe [--agent …] [--cwd …]
  *
  * 降级：ccusage → 本地账本（Claude transcript / OpenCode message）→ unsupported
- * 禁止估算。unsupported 时仍写入 usage（source=unsupported），报告头显示提示文案。
+ * 禁止估算。unsupported 时不写 usage（并删除旧 usage），报告头省略用量行。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -67,15 +67,22 @@ const { usage, path: how, agent } = collectTokenUsage({
   cwd: cwdOpt,
   agent: agentArg,
 });
-runs.usage = usage;
-fs.writeFileSync(runsPath, JSON.stringify(runs, null, 2) + "\n");
 
 if (usage.source === UNSUPPORTED_SOURCE) {
-  console.log(`usage: unsupported (agent=${agent}) → ${usage.message}`);
-  console.log("wrote", runsPath);
+  // 无外部事实：省略 usage，避免盖掉目录里旧的真实用量或在报告头渲染「不支持」
+  if (Object.prototype.hasOwnProperty.call(runs, "usage")) {
+    delete runs.usage;
+    fs.writeFileSync(runsPath, JSON.stringify(runs, null, 2) + "\n");
+    console.log(`usage: unsupported (agent=${agent}) → omitted (removed prior usage)`);
+    console.log("wrote", runsPath);
+  } else {
+    console.log(`usage: unsupported (agent=${agent}) → omitted (no runs.json.usage written)`);
+  }
   process.exit(0);
 }
 
+runs.usage = usage;
+fs.writeFileSync(runsPath, JSON.stringify(runs, null, 2) + "\n");
 console.log(
   `usage: via ${how} (agent=${agent}) total=${usage.total} source=${usage.source}`,
 );

@@ -548,7 +548,7 @@ node $SKILL_DIR/scripts/collect-usage.mjs --dir docs/<slice>-e2e
 
 1. **ccusage**（优先）：按 agent 取 session 列表，**累加**本次编排标题 / `tple-case-*` / 派发时记录的 sessionId
 2. **本地账本**：各 session 本地 usage 相加 → `source: "transcript"` / `"opencode-local"`（合计时可在 `usage.note` 写 `sum of N sessions`）
-3. **不支持**：拿不到任何会话计量 → `usage: { source: "unsupported", message: "当前 agent 不支持 token 消耗采集" }`
+3. **不支持**：拿不到任何会话计量 → **不写** `runs.json.usage`（报告头省略用量行；禁止编造，也不渲染「不支持」提示）
 
 字段形如 `{ input, output, cacheRead, total, source }`（有用量时至少 `total` + `source`）。`usage` 是**编排 + 全部 case subagent（含重派）**合计，不是单个 case。实现见 [reference.md](reference.md) 与 `scripts/lib/token-usage.mjs`。
 
@@ -628,7 +628,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 - [ ] 无 `Meta+a` 等易泄漏到系统的快捷键
 - [ ] 决策点（导航后/关键操作前/DOM 与预期不符）已先 screenshot + snapshot 双通道判断再动手；判断性截图在 `record start` 之前
 - [ ] HTML 可双击打开，侧栏跳转、视频可播；样式来自 `assets/report.css`
-- [ ] 出报告前写入多会话合计 `usage`（或 unsupported）；**未估算、未从 case 数倒推**
+- [ ] 出报告前写入多会话合计 `usage`（拿不到则省略、不写 unsupported）；**未估算、未从 case 数倒推**
 - [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
 - [ ] 报告写明录屏方式（原生为主 / 个别分镜回退）

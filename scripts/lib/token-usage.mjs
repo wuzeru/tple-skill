@@ -10,7 +10,10 @@ import path from "node:path";
 export const UNSUPPORTED_SOURCE = "unsupported";
 export const UNSUPPORTED_MESSAGE = "当前 agent 不支持 token 消耗采集";
 
-/** 解析 ccusage 可执行方式：全局优先，否则 npx */
+/**
+ * 解析 ccusage 可执行方式：全局优先，否则仅本机已缓存的 npx（--no-install，不联网下载）。
+ * 真正安装留给 install-deps 的 `npm i -g ccusage`。
+ */
 export function resolveCcusage() {
   const direct = spawnSync("ccusage", ["--version"], {
     encoding: "utf8",
@@ -23,14 +26,15 @@ export function resolveCcusage() {
       version: String(direct.stdout || "").trim().split("\n")[0],
     };
   }
-  const viaNpx = spawnSync("npx", ["--yes", "ccusage@latest", "--version"], {
+  // 探测禁止 --yes / @latest：避免 check-env 隐式联网安装、离线卡超时
+  const viaNpx = spawnSync("npx", ["--no-install", "ccusage", "--version"], {
     encoding: "utf8",
-    timeout: 120000,
+    timeout: 15000,
   });
   if (!viaNpx.error && viaNpx.status === 0) {
     return {
       bin: "npx",
-      argsPrefix: ["--yes", "ccusage@latest"],
+      argsPrefix: ["--no-install", "ccusage"],
       version: String(viaNpx.stdout || "").trim().split("\n")[0],
     };
   }

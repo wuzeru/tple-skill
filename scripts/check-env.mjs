@@ -10,7 +10,7 @@
  *   2. agent-browser（浏览器操作与 record 录屏）
  *   3. ffmpeg（转码 / 分镜 concat / poster 提取）
  *   4. ffprobe（录后时长校验）
- *   5. ccusage（session token 用量采集；可用全局或 npx）
+ *   5. ccusage（session token 用量采集；全局或本机已缓存 npx，探测不联网安装）
  *   6. --url 给了目标地址时，探测 web 可达性
  *   · token-meter（软探测，不阻断）：ccusage → 本地账本 → 不支持则提示
  *
@@ -55,7 +55,7 @@ probe("agent-browser", ["--version"], "npm i -g agent-browser && agent-browser i
 probe("ffmpeg", ["-version"], "brew install ffmpeg / winget install Gyan.FFmpeg / choco install ffmpeg（按系统包管理器）");
 probe("ffprobe", ["-version"], "随 ffmpeg 一起安装");
 
-// 5. ccusage（硬依赖：全局或 npx 可跑）
+// 5. ccusage（硬依赖：全局或 npx --no-install；安装走 install-deps）
 const ccProbe = probeCcusageInstall();
 if (ccProbe.ok) {
   ok.push({ bin: "ccusage", info: ccProbe.info });

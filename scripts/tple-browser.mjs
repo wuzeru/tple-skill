@@ -48,7 +48,7 @@ function usage(code = 1) {
   node scripts/tple-browser.mjs suite-boot --dir <report> [--mode none|reuse|manual] [--profile …] [--chrome …] [--port n]
   node scripts/tple-browser.mjs login-open --dir <report> --url <url> [--session ${LOGIN_SESSION}]
   node scripts/tple-browser.mjs login-wait --dir <report> --ok-url-regex <re> [--timeout-ms 300000] [--interval-ms 3000]
-  node scripts/tple-browser.mjs login-done --dir <report>
+  node scripts/tple-browser.mjs login-done --dir <report> [--url <url>]   # 默认 about:blank；探活目标站请显式传 --url
   node scripts/tple-browser.mjs suite-teardown --dir <report>
   node scripts/tple-browser.mjs status --dir <report>
   node scripts/tple-browser.mjs run --dir <report> --session <id> -- <args…>`);
@@ -279,7 +279,8 @@ if (verb === "login-done") {
   console.log(
     `login-done: cold-start ${KEEP_ALIVE_SESSION} (forced headless)…`,
   );
-  const keepUrl = arg("--url", "https://sellxagent.com/");
+  // 默认 about:blank，避免通用工具隐式访问外网；探活目标站由编排显式传 --url
+  const keepUrl = arg("--url", "about:blank");
   const warm = runAgentBrowser(
     runState,
     KEEP_ALIVE_SESSION,

@@ -60,7 +60,7 @@
 
 ### Header meta
 
-`main` 内 h1 / lede 之后是 `.meta` 行：环境（生成时间 + `--env`）、录屏说明；若 `runs.json` 有顶层 `usage`：有 `total` 则渲染 Token 用量数字行，`source=unsupported` 则渲染「当前 agent 不支持 token 消耗采集」。无 usage 字段时不渲染该行（老报告兼容）。只加文案行，不改布局/色板。
+`main` 内 h1 / lede 之后是 `.meta` 行：环境（生成时间 + `--env`）、录屏说明；若 `runs.json` 有顶层 `usage` 且含有效 `total`，渲染 Token 用量数字行。无 `usage`、或 `source=unsupported`、或无数：不渲染该行（拿不到外部事实则省略；老报告兼容）。只加文案行，不改布局/色板。
 
 ### Case section
 

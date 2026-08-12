@@ -37,7 +37,7 @@ const missing = [];
 if (!exists("agent-browser")) missing.push("agent-browser");
 if (!exists("ffmpeg")) missing.push("ffmpeg");
 if (!exists("ffprobe")) missing.push("ffprobe");
-// ccusage：全局或 npx 可跑都算有（与 check-env 一致）
+// ccusage：与 check-env 同一探测（全局 / 已缓存 npx；不含联网下载）
 if (!resolveCcusage()) missing.push("ccusage");
 
 if (missing.length === 0) {
