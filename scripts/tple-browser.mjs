@@ -105,9 +105,10 @@ if (verb === "suite-boot") {
   if (profile && path.isAbsolute(profile)) {
     scrubProfileSessionRestore(profile);
   }
-  suitePurge(profile);
+  const bootAudit = { reportDir: dir, phase: PHASES.cold };
+  suitePurge(profile, bootAudit);
 
-  const dash = dashboardStart(port || undefined);
+  const dash = dashboardStart(port || undefined, bootAudit);
   if (!dash.ok) {
     console.warn(
       `dashboard start 未成功（可忽略）: ${dash.err || dash.out || dash.status}`,
@@ -138,7 +139,7 @@ if (verb === "suite-boot") {
       bootState,
       KEEP_ALIVE_SESSION,
       ["open", "about:blank"],
-      { access: "run", timeout: 120000, settle: false },
+      { access: "run", timeout: 120000, settle: false, reportDir: dir },
     );
     if (!warm.ok) {
       fail(`冷启 keepalive 失败: ${warm.err || warm.out || warm.status}`);
@@ -195,11 +196,16 @@ if (verb === "login-open") {
 
   // headed 冷启前清 Session，否则脏 profile 一次恢复几十个窗口
   scrubProfileSessionRestore(state.profile);
-  suitePurge(state.profile);
+  suitePurge(state.profile, {
+    reportDir: dir,
+    phase: state.phase,
+    session,
+  });
 
   const result = runAgentBrowser(state, session, ["open", url], {
     access: "login",
     timeout: 120000,
+    reportDir: dir,
   });
   console.log(`login-open: argv=${JSON.stringify(result.argv)}`);
   if (!result.ok) {
@@ -234,6 +240,7 @@ if (verb === "login-wait") {
     const focused = focusContentTab(state, session, {
       access: "login",
       timeout: 30000,
+      reportDir: dir,
     });
     const url = String(focused.url || "").trim();
     console.log(`login-wait: url=${url} tabs=${focused.tabs?.length || 0}`);
@@ -265,7 +272,11 @@ if (verb === "login-done") {
   // 关键：拆掉 headed daemon，再强制 headless + 同 profile 冷启唯一 keepalive。
   console.log("login-done: purge headed daemon…");
   scrubProfileSessionRestore(state.profile);
-  suitePurge(state.profile);
+  suitePurge(state.profile, {
+    reportDir: dir,
+    phase: state.phase,
+    session: LOGIN_SESSION,
+  });
 
   const runState = {
     ...state,
@@ -285,7 +296,7 @@ if (verb === "login-done") {
     runState,
     KEEP_ALIVE_SESSION,
     ["open", keepUrl],
-    { access: "run", timeout: 120000 },
+    { access: "run", timeout: 120000, reportDir: dir },
   );
   if (!warm.ok) {
     fail(
@@ -303,8 +314,12 @@ if (verb === "suite-teardown") {
   const dir = requireDir();
   const prev = loadState(dir);
   console.log("suite-teardown: close --all + purge + dashboard stop…");
-  suitePurge(prev?.profile || "");
-  const dash = dashboardStop();
+  const teardownAudit = {
+    reportDir: dir,
+    phase: prev?.phase || PHASES.cold,
+  };
+  suitePurge(prev?.profile || "", teardownAudit);
+  const dash = dashboardStop(teardownAudit);
   if (!dash.ok) {
     console.warn(
       `dashboard stop: ${dash.err || dash.out || "not running / ignored"}`,
