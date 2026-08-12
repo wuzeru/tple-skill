@@ -117,6 +117,30 @@ p { margin: 0; }
 }
 .command-sequence span { color: var(--accent); }
 .command-audit-status { color: var(--ok); font-weight: 600; }
+.command-details { margin-top: 10px; }
+.command-details summary {
+  cursor: pointer; color: var(--accent); font-size: 12px; font-weight: 700;
+}
+.command-table-wrap {
+  overflow: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel);
+}
+.command-table-wrap table {
+  width: 100%; min-width: 760px; border-collapse: collapse; font: 11px/1.45 var(--mono);
+}
+.command-table-wrap th, .command-table-wrap td {
+  padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top;
+}
+.command-table-wrap th {
+  position: sticky; top: 0; background: #fafaf9; color: var(--muted); font-weight: 700;
+}
+.command-table-wrap tr:last-child td { border-bottom: 0; }
+.command-table-wrap td:nth-child(2), .command-table-wrap td:last-child {
+  min-width: 240px; max-width: 420px; overflow-wrap: anywhere;
+}
+.command-table-wrap code { white-space: pre-wrap; }
+.command-ok { color: var(--ok); font-weight: 700; }
+.command-fail { color: var(--fail); font-weight: 700; }
 video {
   width: 100%; border-radius: 12px; background: #111; border: 1px solid var(--line);
   aspect-ratio: 16 / 10; object-fit: contain;

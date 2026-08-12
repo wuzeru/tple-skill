@@ -236,15 +236,36 @@ function renderCommandAudit(caseId, entries) {
     (entry) => Array.isArray(entry.argv) && entry.argv.at(-1) === "***",
   );
   const sequence = commands.slice(0, 8).map(esc).join(" <span>→</span> ");
+  const rows = entries
+    .map((entry) => {
+      const result = entry.ok ? "OK" : `FAIL (${entry.status ?? "—"})`;
+      const details = entry.err || entry.out || "—";
+      return `<tr>
+        <td>${esc(entry.ts || "—")}</td>
+        <td><code>${esc(JSON.stringify(entry.argv || []))}</code></td>
+        <td class="${entry.ok ? "command-ok" : "command-fail"}">${esc(result)}</td>
+        <td>${esc(`${entry.durationMs ?? "—"}ms`)}</td>
+        <td>${esc(details)}</td>
+      </tr>`;
+    })
+    .join("\n");
 
   return `<aside class="command-audit">
       <div class="command-audit-head">
         <h3>命令审计</h3>
-        <a href="commands.jsonl" target="_blank" rel="noopener">打开完整 commands.jsonl</a>
       </div>
       <p><strong>${entries.length}</strong> 条命令 · 失败 ${failures.length} 条 · session <code>${esc(caseId)}</code></p>
       <p class="command-sequence">${sequence}</p>
       <p class="command-audit-status">${fillEntries.length === 0 || isRedacted ? "输入参数已脱敏" : "存在未脱敏输入"}${failedCommands ? ` · 失败命令：${esc(failedCommands)}` : ""}</p>
+      <details class="command-details">
+        <summary>展开逐条流水</summary>
+        <div class="command-table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>argv</th><th>结果</th><th>耗时</th><th>输出 / 错误</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </details>
     </aside>`;
 }
 
