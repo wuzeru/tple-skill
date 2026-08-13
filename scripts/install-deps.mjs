@@ -5,9 +5,10 @@
  * Usage:
  *   node install-deps.mjs [--dry-run]
  *
- * 逻辑：自行用 which（macOS/Linux）或 where（Windows）探测 agent-browser /
- * ffmpeg / ffprobe / ccusage 是否缺失（与 check-env 同一判定标准），对缺失项执行安装
+ * 逻辑：探测 Playwright / agent-browser / ffmpeg / ffprobe / ccusage
+ * 是否缺失（与 check-env 同一判定标准），对缺失项执行安装
  * 指引，装完复检。
+ *   - playwright → npm 安装到 ~/.tple/runtime，再安装 Chromium
  *   - agent-browser → npm i -g agent-browser && agent-browser install
  *   - ffmpeg/ffprobe → brew（macOS/Linux）/ winget 或 choco（Windows），
  *     一次安装补齐两者；无可用包管理器则提示手动安装
@@ -16,10 +17,15 @@
  * 退出码：复检全过 0；仍有缺失 1。
  */
 import { spawnSync } from "node:child_process";
+import {
+  getPlaywrightRuntimeDir,
+  probePlaywright,
+} from "./lib/playwright-runtime.mjs";
 import { resolveCcusage } from "./lib/token-usage.mjs";
 
 const dryRun = process.argv.includes("--dry-run");
 const IS_WIN = process.platform === "win32";
+const playwrightRuntimeDir = getPlaywrightRuntimeDir();
 const run = (bin, args, timeout = 300000) => {
   console.log(`  $ ${bin} ${args.join(" ")}`);
   if (dryRun) return { status: 0 };
@@ -34,6 +40,8 @@ const exists = (bin) => {
 };
 
 const missing = [];
+const initialPlaywrightProbe = await probePlaywright();
+if (!initialPlaywrightProbe.ok) missing.push("playwright");
 if (!exists("agent-browser")) missing.push("agent-browser");
 if (!exists("ffmpeg")) missing.push("ffmpeg");
 if (!exists("ffprobe")) missing.push("ffprobe");
@@ -45,6 +53,30 @@ if (missing.length === 0) {
   process.exit(0);
 }
 console.log(`缺失依赖: ${missing.join(", ")}`);
+
+if (missing.includes("playwright")) {
+  console.log(`→ 安装 Playwright 到 ${playwrightRuntimeDir}`);
+  const installed = run(
+    "npm",
+    ["install", "--prefix", playwrightRuntimeDir, "playwright"],
+    600000,
+  );
+  if (installed.status === 0) {
+    run(
+      "npm",
+      [
+        "exec",
+        "--prefix",
+        playwrightRuntimeDir,
+        "--",
+        "playwright",
+        "install",
+        "chromium",
+      ],
+      600000,
+    );
+  }
+}
 
 if (missing.includes("agent-browser")) {
   console.log("→ 安装 agent-browser（npm 全局）");
@@ -74,6 +106,7 @@ if (missing.includes("ccusage")) {
 // 复检
 console.log("\n复检：");
 const still = [];
+if (!(await probePlaywright()).ok) still.push("playwright");
 if (!exists("agent-browser")) still.push("agent-browser");
 if (!exists("ffmpeg")) still.push("ffmpeg");
 if (!exists("ffprobe")) still.push("ffprobe");

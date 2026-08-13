@@ -38,14 +38,60 @@ if (!fs.existsSync(file)) {
 const src = fs.readFileSync(file, "utf8");
 const errors = [];
 
-const hasCreateBrowser =
-  /\bcreateBrowser\b/.test(src) &&
-  (/tple-browser\.mjs/.test(src) || /from\s+['"].*tple-browser/.test(src));
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
 
-if (!hasCreateBrowser) {
-  errors.push(
-    "必须 import createBrowser（来自 scripts/lib/tple-browser.mjs），禁止手写 agent-browser 封装",
+const executableSource = stripComments(src);
+const isLegacyBackend =
+  /^\s*(?:export\s+)?const\s+TPLE_BROWSER_BACKEND\s*=\s*["']agent-browser-legacy["']\s*;?\s*$/m.test(
+    executableSource,
   );
+
+const hasCreateBrowser =
+  /\bcreateBrowser\b/.test(executableSource) &&
+  (/tple-browser\.mjs/.test(executableSource) ||
+    /from\s+['"].*tple-browser/.test(executableSource));
+
+if (isLegacyBackend) {
+  if (!hasCreateBrowser) {
+    errors.push(
+      "legacy 后端必须 import createBrowser（来自 scripts/lib/tple-browser.mjs）",
+    );
+  }
+} else {
+  const hasCreatePlaywrightCase =
+    /\bcreatePlaywrightCase\b/.test(executableSource) &&
+    (/tple-playwright\.mjs/.test(executableSource) ||
+      /from\s+['"].*tple-playwright/.test(executableSource));
+  if (!hasCreatePlaywrightCase) {
+    errors.push(
+      "默认后端必须 import createPlaywrightCase（来自 scripts/lib/tple-playwright.mjs）；旧 createBrowser 需显式声明 agent-browser-legacy",
+    );
+  }
+  if (
+    /\bchromium\s*\.\s*(?:launch|launchPersistentContext)\s*\(/.test(
+      executableSource,
+    )
+  ) {
+    errors.push(
+      "禁止自行 chromium.launch/launchPersistentContext；请用 createPlaywrightCase 管理录屏与清理",
+    );
+  }
+  if (
+    /authing_token|auth_status|document\s*\.\s*cookie|localStorage\s*\.\s*(?:getItem|setItem)/i.test(
+      executableSource,
+    ) ||
+    /\.tple-auth-state\.json|authStatePath\s*\(|\.\s*(?:cookies|storageState)\s*\(|\[\s*["'](?:cookies|storageState)["']\s*\]\s*\(/i.test(
+      executableSource,
+    )
+  ) {
+    errors.push(
+      "默认 Playwright runner 禁止读取认证值；登录态只通过 storageState 注入且不得写入报告产物",
+    );
+  }
 }
 
 const bareSpawn = [
@@ -56,21 +102,41 @@ const bareSpawn = [
   /exec\s*\(\s*['"]agent-browser/,
 ];
 for (const re of bareSpawn) {
-  if (re.test(src)) {
-    errors.push(`禁止裸调用 agent-browser（匹配 ${re}）；请用 createBrowser().run`);
+  if (re.test(executableSource)) {
+    const hint = isLegacyBackend
+      ? "请用 createBrowser().run"
+      : "默认请用 createPlaywrightCase，不要裸调 agent-browser";
+    errors.push(`禁止裸调用 agent-browser（匹配 ${re}）；${hint}`);
     break;
   }
 }
 
-if (/function\s+purge\s*\(/.test(src) && /close\s+--all|close",\s*"--all"|close',\s*'--all'/.test(src)) {
+if (
+  /function\s+purge\s*\(/.test(executableSource) &&
+  /close\s+--all|close",\s*"--all"|close',\s*'--all'/.test(executableSource)
+) {
   errors.push(
     "禁止本地 purge + close --all；套件清理只许编排 tple-browser suite-boot / suite-teardown",
   );
 }
 
-if (/pkill\s+.*agent-browser|pkill.*user-data-dir=\.\*\/agent-browser/.test(src)) {
+if (
+  /pkill\s+.*agent-browser|pkill.*user-data-dir=\.\*\/agent-browser/.test(
+    executableSource,
+  )
+) {
   errors.push(
     "禁止在 run-cases 内 pkill agent-browser Chrome；套件清理交给 suite-boot/teardown",
+  );
+}
+
+const hasRecordStop = /["']record["']\s*,\s*["']stop["']/.test(executableSource);
+const hasStopRecordingHelper = /function\s+stopRecording\s*\(/.test(
+  executableSource,
+);
+if (isLegacyBackend && hasRecordStop && !hasStopRecordingHelper) {
+  errors.push(
+    "录制脚本必须定义 stopRecording()：仅 No recording in progress 可忽略，其他 record stop 错误必须失败",
   );
 }
 

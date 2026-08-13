@@ -125,7 +125,7 @@ function validateMedia(dir, ids, minDuration) {
       const d = mediaDuration(vid);
       const rel = path.relative(dir, vid);
       if (d === null) warnings.push(`无法用 ffprobe 读取 ${rel} 时长`);
-      else if (d < minDuration) warnings.push(`${rel} 时长 ${d.toFixed(1)}s < ${minDuration}s（确认是分镜回退；原生录屏应 ≥${minDuration}s）`);
+      else if (d < minDuration) warnings.push(`${rel} 时长 ${d.toFixed(1)}s < ${minDuration}s（确认是分镜回退；Playwright 录屏应 ≥${minDuration}s）`);
     }
   }
   for (const w of warnings) console.warn(`[media] warn: ${w}`);
@@ -336,7 +336,7 @@ const lede = arg("--lede", "端到端录屏验收报告。");
 const envExtra = arg("--env", "");
 const recordingNote = arg(
   "--recording",
-  "录屏方式：默认 agent-browser 原生 record（开跑前/每 case 前清理残留进程）；ffprobe < 4s 时回退分镜截图。",
+  "录屏方式：Playwright context recordVideo；不达标同后端重试一次，仍失败回退分镜。",
 );
 const casesPath = arg("--cases", path.join(dir, "cases.json"));
 

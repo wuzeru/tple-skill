@@ -3,10 +3,10 @@
  * tple-skill — 语义化浏览器套件 CLI（编排专用）
  *
  * Usage:
- *   node tple-browser.mjs suite-boot --dir <report> [--mode none|reuse|manual] [--profile …] [--chrome …] [--port n]
+ *   node tple-browser.mjs suite-boot --dir <report> [--mode none|reuse|manual] [--profile …] [--chrome …] [--url …] [--port n]
  *   node tple-browser.mjs login-open --dir <report> --url <url> [--session tple-login]
  *   node tple-browser.mjs login-wait --dir <report> --ok-url-regex <re> [--timeout-ms n] [--interval-ms n]
- *   node tple-browser.mjs login-done --dir <report>
+ *   node tple-browser.mjs login-done --dir <report> --url <target>
  *   node tple-browser.mjs suite-teardown --dir <report>
  *   node tple-browser.mjs status --dir <report>
  *   node tple-browser.mjs run --dir <report> --session <id> -- <agent-browser args…>
@@ -39,16 +39,20 @@ import {
   sleepMs,
   suitePurge,
 } from "./lib/tple-browser.mjs";
+import {
+  exportStorageStateFromProfile,
+  removeStorageState,
+} from "./lib/tple-playwright.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_DIR = path.resolve(__dirname, "..");
 
 function usage(code = 1) {
   console.error(`用法:
-  node scripts/tple-browser.mjs suite-boot --dir <report> [--mode none|reuse|manual] [--profile …] [--chrome …] [--port n]
+  node scripts/tple-browser.mjs suite-boot --dir <report> [--mode none|reuse|manual] [--profile …] [--chrome …] [--url …] [--port n]
   node scripts/tple-browser.mjs login-open --dir <report> --url <url> [--session ${LOGIN_SESSION}]
   node scripts/tple-browser.mjs login-wait --dir <report> --ok-url-regex <re> [--timeout-ms 300000] [--interval-ms 3000]
-  node scripts/tple-browser.mjs login-done --dir <report> [--url <url>]   # 默认 about:blank；探活目标站请显式传 --url
+  node scripts/tple-browser.mjs login-done --dir <report> --url <target>
   node scripts/tple-browser.mjs suite-teardown --dir <report>
   node scripts/tple-browser.mjs status --dir <report>
   node scripts/tple-browser.mjs run --dir <report> --session <id> -- <args…>`);
@@ -84,10 +88,12 @@ if (verb === "suite-boot") {
 
   let profile = arg("--profile", "");
   let chrome = arg("--chrome", "");
+  const targetUrl = arg("--url", "");
   const port = arg("--port", "");
 
   if (mode === LOGIN_MODES.reuse) {
     if (!profile) fail("mode=reuse 必须 --profile <Chrome profile 名>");
+    if (!targetUrl) fail("mode=reuse 需要 --url <目标地址> 导出 storageState");
     if (!chrome) chrome = defaultChromePath();
     if (!chrome) {
       fail(
@@ -102,6 +108,7 @@ if (verb === "suite-boot") {
   }
 
   console.log("suite-boot: purge + dashboard start…");
+  removeStorageState(dir);
   if (profile && path.isAbsolute(profile)) {
     scrubProfileSessionRestore(profile);
   }
@@ -116,37 +123,9 @@ if (verb === "suite-boot") {
   }
 
   const phase =
-    mode === LOGIN_MODES.manual ? PHASES.login : PHASES.run;
+    mode === LOGIN_MODES.none ? PHASES.run : PHASES.login;
 
-  // mode=none/reuse：立刻 headless 冷启 keepalive，避免后续第一条命令才首次拉 Chrome
-  if (phase === PHASES.run && (mode === LOGIN_MODES.reuse || mode === LOGIN_MODES.none)) {
-    const bootState = {
-      version: 1,
-      phase: PHASES.run,
-      loginMode: mode,
-      profile: profile || null,
-      executablePath: mode === LOGIN_MODES.reuse ? chrome : null,
-      chromeArgs: HEADLESS_CHROME_ARGS,
-      chromeArgsRun: HEADLESS_CHROME_ARGS,
-      chromeArgsLogin: DEFAULT_CHROME_ARGS,
-      dashboard: { started: dash.ok, port: port ? Number(port) : 4848 },
-      skillDir: SKILL_DIR,
-      createdAt: new Date().toISOString(),
-    };
-    saveState(dir, bootState);
-    if (mode === LOGIN_MODES.reuse) scrubProfileSessionRestore(profile);
-    const warm = runAgentBrowser(
-      bootState,
-      KEEP_ALIVE_SESSION,
-      ["open", "about:blank"],
-      { access: "run", timeout: 120000, settle: false, reportDir: dir },
-    );
-    if (!warm.ok) {
-      fail(`冷启 keepalive 失败: ${warm.err || warm.out || warm.status}`);
-    }
-  }
-
-  const state = saveState(dir, {
+  let state = saveState(dir, {
     version: 1,
     phase,
     loginMode: mode,
@@ -160,8 +139,26 @@ if (verb === "suite-boot") {
       port: port ? Number(port) : 4848,
     },
     skillDir: SKILL_DIR,
+    browserBackend: "playwright",
     createdAt: new Date().toISOString(),
   });
+  if (mode === LOGIN_MODES.reuse) {
+    console.log("suite-boot: export storageState from reused profile…");
+    try {
+      await exportStorageStateFromProfile(dir, state, targetUrl);
+      state = saveState(dir, { ...state, phase: PHASES.run });
+    } catch (error) {
+      removeStorageState(dir);
+      suitePurge(profile, bootAudit);
+      dashboardStop(bootAudit);
+      saveState(dir, {
+        ...state,
+        phase: PHASES.login,
+        dashboard: { ...(state.dashboard || {}), started: false },
+      });
+      fail(`mode=reuse 导出 storageState 失败: ${error.message}`);
+    }
+  }
 
   console.log(
     `suite-boot: ok phase=${state.phase} mode=${state.loginMode}` +
@@ -262,6 +259,8 @@ if (verb === "login-wait") {
 if (verb === "login-done") {
   const dir = requireDir();
   const state = requireState(dir);
+  const targetUrl = arg("--url", "");
+  if (!targetUrl) fail("login-done 需要 --url <目标地址> 导出 storageState");
   if (state.loginMode !== LOGIN_MODES.manual) {
     fail(`login-done 仅用于 mode=manual（当前 ${state.loginMode}）`);
   }
@@ -269,7 +268,7 @@ if (verb === "login-done") {
     fail(`login-done 期望 phase=login（当前 ${state.phase}）`);
   }
 
-  // 关键：拆掉 headed daemon，再强制 headless + 同 profile 冷启唯一 keepalive。
+  // 先拆掉 headed daemon，解除 profile 锁，再由 Playwright 导出 storageState。
   console.log("login-done: purge headed daemon…");
   scrubProfileSessionRestore(state.profile);
   suitePurge(state.profile, {
@@ -278,35 +277,25 @@ if (verb === "login-done") {
     session: LOGIN_SESSION,
   });
 
+  console.log("login-done: export Playwright storageState…");
+  removeStorageState(dir);
+  try {
+    await exportStorageStateFromProfile(dir, state, targetUrl);
+  } catch (error) {
+    fail(`导出 storageState 失败: ${error.message}`);
+  }
+
   const runState = {
     ...state,
     phase: PHASES.run,
+    browserBackend: "playwright",
     chromeArgs: HEADLESS_CHROME_ARGS,
     chromeArgsRun: HEADLESS_CHROME_ARGS,
     chromeArgsLogin: DEFAULT_CHROME_ARGS,
   };
   saveState(dir, runState);
 
-  console.log(
-    `login-done: cold-start ${KEEP_ALIVE_SESSION} (forced headless)…`,
-  );
-  // 默认 about:blank，避免通用工具隐式访问外网；探活目标站由编排显式传 --url
-  const keepUrl = arg("--url", "about:blank");
-  const warm = runAgentBrowser(
-    runState,
-    KEEP_ALIVE_SESSION,
-    ["open", keepUrl],
-    { access: "run", timeout: 120000, reportDir: dir },
-  );
-  if (!warm.ok) {
-    fail(
-      `headless 冷启失败（cookie 应已落盘；可重试 login-done）: ${warm.err || warm.out || warm.status}`,
-    );
-  }
-  console.log(`login-done: keepalive url=${warm.settledUrl || warm.out}`);
-  console.log(
-    `login-done: phase=run session=${KEEP_ALIVE_SESSION}（探活请 --session ${KEEP_ALIVE_SESSION} 或 probe→自动映射；禁止新开 session 拉浏览器）`,
-  );
+  console.log("login-done: phase=run backend=playwright");
   process.exit(0);
 }
 
@@ -319,6 +308,7 @@ if (verb === "suite-teardown") {
     phase: prev?.phase || PHASES.cold,
   };
   suitePurge(prev?.profile || "", teardownAudit);
+  removeStorageState(dir);
   const dash = dashboardStop(teardownAudit);
   if (!dash.ok) {
     console.warn(
