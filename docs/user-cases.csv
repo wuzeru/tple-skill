@@ -21,3 +21,7 @@ id,module,title,precondition,steps,expected,priority,status,notes
 28-record-restore,recording,录制 context 恢复认证,27 已打开报告页,record start 后注入 token 和 auth_status 再 reload 当前报告 URL,录制页仍为已登录报告页并产生原生视频,P0,passed,登录态与报告页恢复通过
 29-media-quality,recording,原生视频媒体质量,28 已完成录制,ffprobe 检查时长与帧数,视频时长至少 4 秒且帧数持续,P0,failed,agent-browser Page.captureScreenshot 间歇性超时：重复 3 次得到 42 帧、3 帧、42 帧
 30-secret-safety,recording,认证信息不写入报告产物,26 至 29 已执行,检查 meta 与 cases 数据,产物不包含 token 或 cookie 值,P1,passed,issue #26
+31-playwright-checkenv,environment,Playwright 与 Chromium 实际可用检测,未保证 Playwright runtime 完整,运行 check-env,模块可导入且 Chromium 能启动/关闭才通过；缺包或缺浏览器均失败并给 install-deps 指引,P0,passed,Playwright 默认后端迁移
+32-playwright-default,recording,run-cases 默认使用 Playwright 录屏,已生成标准 runner,运行 check-run-cases 并执行单 case,必须经 createPlaywrightCase 创建 recordVideo context；禁止自行 launch 或裸调 agent-browser,P0,passed,Playwright 默认后端迁移
+33-storage-state,auth,登录态通过 storageState 交接,已选择 reuse 或 manual 登录模式,suite-boot reuse 或 login-done 后执行 case,CLI 原子导出 .tple-auth-state.json；每个 Playwright context 自动恢复；teardown 删除,P0,passed,Playwright 默认后端迁移
+34-agent-browser-legacy,compatibility,旧 agent-browser runner 显式兼容,存在尚未迁移的旧 runner,声明 agent-browser-legacy 后运行 check-run-cases,保留 createBrowser 与 stopRecording 契约；未声明时拒绝,P1,passed,Playwright 默认后端迁移

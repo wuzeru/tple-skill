@@ -2,7 +2,7 @@
 name: tple-skill
 description: >-
   TPLE：编排 agent + 每 case 独立 subagent 串行录屏验收（禁止单会话包办全套），
-  agent-browser 原生 record，过短回退分镜，生成按 case 分区的 HTML 验收报告。
+  Playwright 默认执行并录屏，agent-browser 仅用于探索与兼容回退，生成按 case 分区的 HTML 验收报告。
   也支持产品调研模式：只给网址、无代码，探索后同样按 case 派发 subagent 出调研报告。
   Use when the user asks for tple-skill, TPLE, E2E 录屏验收、按 case HTML 报告、
   issue 验收录屏、端到端 HTML report with video, or per-case acceptance evidence;
@@ -27,7 +27,7 @@ description: >-
 | 路径 | 用途 |
 |------|------|
 | `tple-memory.md` | **项目级记忆**（建议入库）。本项目跑 TPLE 时发现的可复用经验：登录/断言坑、选择器、站点特有可见性信号等 |
-| `.tple/<slice>/` | **本次运行产物**（默认；是否入库由项目自定）。报告、`meta.jsonl`、`runs.json`、`cases.json`、`run-cases.mjs`、`videos/`、`.tple-browser.json`、临时 `state` 等 |
+| `.tple/<slice>/` | **本次运行产物**（默认；是否入库由项目自定）。报告、`meta.jsonl`、`runs.json`、`cases.json`、`run-cases.mjs`、`videos/`、`.tple-browser.json`、运行期 `.tple-auth-state.json` 等 |
 | `docs/user-cases.csv` | 验收模式 case 清单（团队可读的产品文档，可继续放 `docs/`）；调研草案确认后也可落盘于此或 `.tple/user-cases.csv` |
 
 **记忆怎么用（编排必做，自然发现）：**
@@ -97,8 +97,8 @@ TPLE **禁止**由单个 LLM 会话串行包办全部 case（长上下文会导�
 **硬约束：**
 
 1. **串行派发**：同一时刻只跑一个 case subagent（避免互相 `pkill` / 抢 daemon）。禁止「主会话自己点完所有 case」替代派发。
-2. **Subagent 禁令**：禁止裸调 `agent-browser` / 手写 `ab()`；禁止 `close --all` / 按特征 `pkill`；禁止 `dashboard start|stop`；禁止改公共 `run-cases.mjs` 骨架 / 其他 case 分支 / `cases.json` 全局字段；禁止跑 `CASE_ID` 以外的 case；禁止 `build-report` / `collect-usage` / 改 skill 文档。浏览器操作**只**经 `createBrowser(reportDir).run(session, args)` / `closeSession(session)`（库会强制注入 profile、拒绝 headed/`close --all`/dashboard）。
-3. **套件级生命周期只归编排 CLI**：`node $SKILL_DIR/scripts/tple-browser.mjs suite-boot|login-*|suite-teardown`（内部才做 `close --all` + pkill + dashboard）。**禁止**每个 case 开始前再 purge。Subagent 结束只 `closeSession(caseId)`。
+2. **Subagent 禁令**：默认后端禁止裸调 `agent-browser`、自行 `chromium.launch` / `launchPersistentContext`；禁止 `close --all` / 按特征 `pkill`；禁止 `dashboard start|stop`；禁止改公共 `run-cases.mjs` 骨架 / 其他 case 分支 / `cases.json` 全局字段；禁止跑 `CASE_ID` 以外的 case；禁止 `build-report` / `collect-usage` / 改 skill 文档。浏览器操作只经 `createPlaywrightCase(reportDir, caseId).run(async ({ page }) => …)`；旧脚本必须显式声明 `const TPLE_BROWSER_BACKEND = "agent-browser-legacy"` 后才可用 `createBrowser`。
+3. **套件级生命周期只归编排 CLI**：`node $SKILL_DIR/scripts/tple-browser.mjs suite-boot|login-*|suite-teardown`（内部才做 agent-browser 清理、dashboard 和 Playwright `storageState` 导出/删除）。**禁止**每个 case 开始前再 purge；Playwright case 的 context/browser 由 `createPlaywrightCase` 自动关闭。
 4. **脚本锁定**：`run-cases.mjs` 由编排写好后须过 `check-run-cases.mjs` 再派发；subagent 默认只执行不改写。若录屏契约必须改脚本，回传原因由编排改完再重派该 case。
 5. **宿主适配**：用当前 agent 的「子 agent / Task / 独立 `opencode run` / Claude Agent」等能力派发；没有子 agent API 时，用**新开独立会话**（新 session 标题 `tple-case-<id>`）等价替代——仍须上下文隔离，禁止在主会话里假装跑完。
 
@@ -235,7 +235,7 @@ node $SKILL_DIR/scripts/check-env.mjs --url <WEB_URL>
 node $SKILL_DIR/scripts/check-env.mjs --url https://example.com --mode research
 ```
 
-检查 node ≥18 / agent-browser / ffmpeg / ffprobe / **ccusage** / 目标 web 可达；全部 ✓ 才进入后续步骤。另有软探测 `token-meter`（· 行）：用 ccusage→本地账本探测当前 agent 能否采集用量；不支持只提示、不阻断。
+检查 Node ≥18 / **Playwright 模块 + Chromium 实际启动** / agent-browser / ffmpeg / ffprobe / **ccusage** / 目标 web 可达；全部 ✓ 才进入后续步骤。Playwright 不能只看 CLI 版本：模块不可导入或 Chromium 未安装/启动失败都算环境不满足。另有软探测 `token-meter`（· 行）：用 ccusage→本地账本探测当前 agent 能否采集用量；不支持只提示、不阻断。
 
 **【调研模式】预期差异**：不需要本地 dev server；目标是公网 URL。401/403 会标为「可达但受限」——这是正常信号（需登录/反爬），如实带入报告与后续步骤，**不得**当成环境故障去「修」，也不得归因瞎猜。站点不可达时如实报告，不重试轰炸。
 
@@ -244,6 +244,7 @@ node $SKILL_DIR/scripts/check-env.mjs --url https://example.com --mode research
 ```bash
 node $SKILL_DIR/scripts/install-deps.mjs   # 一键：按缺失清单安装 + 复检
 # 或按 check-env 打印的指引手动装：
+#   playwright → npm 安装到 ~/.tple/runtime + playwright install chromium
 #   agent-browser → npm i -g agent-browser && agent-browser install（全平台）
 #   ffmpeg/ffprobe → brew install ffmpeg（macOS/Linux）或 winget install Gyan.FFmpeg（Windows）
 #   ccusage → npm i -g ccusage
@@ -271,7 +272,7 @@ node $SKILL_DIR/scripts/check-update.mjs   # 本地版本 vs GitHub 最新 relea
 # 报告目录默认 .tple/<slice>-e2e/；仓库已约定 docs/ 时改 --dir 即可
 # mode=none 公开路径；reuse=选项A；manual=选项B（phase=login，须再走 login-*）
 node $SKILL_DIR/scripts/tple-browser.mjs suite-boot --dir .tple/<slice>-e2e \
-  --mode none|reuse|manual [--profile …] [--chrome …] [--port 4848]
+  --mode none|reuse|manual [--profile …] [--chrome …] [--url <WEB_URL>] [--port 4848]
 open http://localhost:4848   # macOS；Windows: start http://localhost:4848
 
 # Step 7 / 套件结束（内部：close --all + pkill + dashboard stop；phase=torn_down）
@@ -279,7 +280,7 @@ node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir .tple/<slice>-e2e
 ```
 
 - **禁止**每个 case 开始前再 purge / `close --all`（会拆掉登录 profile、诱发多开 Chrome）。
-- case 间只 `createBrowser(dir).closeSession(caseId)`。
+- Playwright case 间无需手写 close；`createPlaywrightCase().run()` 在 `finally` 自动关闭 context/browser 并保存视频。legacy case 才使用 `closeSession(caseId)`。
 - dashboard 由 suite-boot/teardown 管；失败不阻塞主流程。排查「页面没到位/ref 失效/录屏断帧」优先看 :4848。
 
 - 确认 web / api 可访问；多 worktree 时**避开占用端口**，用 env 注入：
@@ -287,7 +288,7 @@ node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir .tple/<slice>-e2e
 - 破坏性探测（如 `kill -STOP` API）跑完必须 `kill -CONT`
 - 派发 subagent 时注入 `TPLE_SKILL_DIR=$SKILL_DIR`（run-cases import 库用）
 
-依赖：`agent-browser`、`ffmpeg`、`ffprobe`、Node 18+。
+依赖：`playwright` + Chromium、`agent-browser`（探索/legacy）、`ffmpeg`、`ffprobe`、Node 18+。
 
 ---
 
@@ -299,16 +300,16 @@ node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir .tple/<slice>-e2e
 
 | 选项 | 做法（必须走 `tple-browser`，禁止手拼 flag） | 适用 |
 |------|------|------|
-| **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出 → 用户选定后：`suite-boot --dir … --mode reuse --profile "<名>" [--chrome <系统Chrome>]`（脚本写入状态并强制后续每条命令注入 profile + executable-path） | 用户本地 Chrome 已登录目标站点（最常见） |
-| **B. headed 引导手动登录** | `suite-boot --mode manual` → `login-open --url …` → 用户在 headed 窗完成登录 → `login-wait --ok-url-regex …` → `login-done`（phase→run，**此后 headed 永久拒绝**；case 无 headed、同 profile） | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
+| **A. 复用本地 Chrome profile** | `agent-browser profiles` 列出 → 用户选定后：`suite-boot --dir … --mode reuse --profile "<名>" --url <WEB_URL> [--chrome <系统Chrome>]`。CLI 复制所选 profile，经 Playwright 访问目标 origin 后导出 `.tple-auth-state.json` | 用户本地 Chrome 已登录目标站点（最常见） |
+| **B. headed 引导手动登录** | `suite-boot --mode manual` → `login-open --url …` → 用户在 headed 窗完成登录 → `login-wait --ok-url-regex …` → `login-done --url <WEB_URL>`；CLI 关闭 headed daemon 后导出 Playwright `storageState`，phase→run | 无法/不愿复用本地 profile，或登录涉及验证码/2FA |
 | **C. 连接用户真实浏览器（人机检测场景）** | `tple-browser` 的 `loginMode=cdp` **本期未实现**（suite-boot 会拒）；仍按 [reference.md](reference.md)「选项 C」手工 CDP 流程，并在报告注明。后续版本再收口 | 登录/生成路径被**人机检测门闩**拦死 |
-| 提供凭据 | 用户给出账号密码；`suite-boot --mode none` 后用 `createBrowser().run` 做 `fill` 登录（凭据不落报告正文） | 用户明示愿意提供 |
+| 提供凭据 | 用户给出账号密码；`suite-boot --mode manual` 后在 headed 登录页填写，完成后 `login-done --url <WEB_URL>` 导出状态（凭据不落报告正文） | 用户明示愿意提供 |
 | 放弃登录 | `suite-boot --mode none`；只走公开路径，报告 lede/env 标注「未登录态」 | 用户不想登录或调研模式默认 |
 
 **关键约束：**
 
-- **选项 A/B 的 profile 注入由库强制**，禁止在 run-cases 手写 `spawnSync("agent-browser"…)` 或「为躲 DevTools 删掉 --profile」。漏带即丢登录态——脚本层直接 throw。
-- **选项 B：headed 仅 `login-open` 一次**；`login-done` 会 **purge 全部 daemon + 同 profile 强制 headless（`--headed false` + `--headless=new`）冷启唯一 `tple-keepalive`**。manual/reuse 下**整套 case 共用该 session**（同一 `user-data-dir` 不能并行多 session，否则 Chrome exit 21 + daemon 膨胀）。探活 `probe`→自动映射 keepalive。`open` 后 settle 只切 tab / 同 tab `location.assign`，**禁止二次 open**。目录型 profile 冷启前清 `Default/Sessions`。
+- **选项 A/B 的认证交接由 CLI 强制**：运行期认证只读 `.tple-auth-state.json`，case 通过 `browser.newContext({ storageState, recordVideo })` 恢复。禁止在 `run-cases` 读取/写入 token、cookie 或 profile 内容；认证文件不进入 meta/cases/runs/HTML，teardown 删除。
+- **选项 B：headed 仅 `login-open` 一次**；`login-done --url <WEB_URL>` 先 purge headed daemon、复制临时 profile，再由 Playwright 打开目标 origin 并原子导出 `storageState`。导出失败不得进入 Step 3。
 - **选项 C 必须先预检**（见 reference）；严禁 `--auto-connect` 重试循环。
 - 选定登录态后，先验证登录成功再进 Step 3；验证不过就回报用户，不带病开跑。
 - **不要用 `--auto-connect` + `state save` 导 cookie 复用多 profile 登录态**（见反模式表）。
@@ -324,60 +325,68 @@ node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir .tple/<slice>-e2e
 本步由**编排 agent**完成，写完即锁定，再进入 Step 4 派发。
 
 1. 在工作根创建报告目录 `.tple/<slice>-e2e/`（或已约定的 `docs/<slice>-e2e/`：含 `videos/`、空 `meta.jsonl`、初始 `runs.json`）；Step 2 已写出 `.tple-browser.json`
-2. 写出标准 `run-cases.mjs`：**必须** `import { createBrowser } from "$SKILL_DIR/scripts/lib/tple-browser.mjs"`（路径写绝对或经 `TPLE_SKILL_DIR`）；用 `browser.run(caseId, […])` / `closeSession`；含 `logCase` 双写；支持 `CASE_ID=<id>` 单跑；禁止本地 `ab()`/`purge`/`spawnSync("agent-browser"`
+2. 写出标准 `run-cases.mjs`：**必须** `import { createPlaywrightCase, validateVideo } from "$SKILL_DIR/scripts/lib/tple-playwright.mjs"`（路径写绝对或经 `TPLE_SKILL_DIR`）；用 `createPlaywrightCase(reportDir, caseId).run(async ({ page }) => …)`；含 `logCase` 双写；支持 `CASE_ID=<id>` 单跑；禁止自行 `chromium.launch` / `launchPersistentContext`、裸调 `agent-browser` 或读取认证值
 3. 写出 `cases.json`（uc/steps/expected）
 4. **锁定前门闩**：`node $SKILL_DIR/scripts/check-run-cases.mjs --dir docs/<slice>-e2e`（exit 0 才派发）
 5. 派发时注入 `TPLE_SKILL_DIR=$SKILL_DIR`；录屏契约 / `WEB_URL` 写进脚本或 env
 
-#### 默认录屏策略：原生 `agent-browser record`（分镜仅作回退）
+#### 默认录屏策略：Playwright context `recordVideo`（分镜仅作回退）
 
 （编排写入脚本；**case subagent 执行时遵守同一契约**。）
 
-原生 record **可用**。曾出现「墙钟 30s、`record stop` 卡 ~20s、落盘只有 ~1s」时，根因通常是**残留 agent-browser Chrome 污染**，不是 record 本身不能用。单独 case 在清理后可稳定录到 6–12s。
+`createPlaywrightCase` 在进入 case 回调前创建隔离 browser context，同时启用 `recordVideo`。选项 A/B 已生成 `.tple-auth-state.json` 时，库自动把它作为 `storageState` 传给 `browser.newContext`；不再在 case 中复制 token、cookie 或调用 `location.reload()` 修补认证。
 
-**成功契约（agent-browser 0.26.0 实测修订，必须遵守）：**
+**成功契约（必须遵守）：**
 
-1. 录前完成登录 / 导航准备（可用 API token + `localStorage`）
-2. **录前把页面完全就位**：`open <url>` + `wait` 等渲染完成。⚠️ **0.26.0 中录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本**必产出空视频**，不要照做
-3. **防御性 `stopRecording(caseId)` → `record start <path.webm>`**。`stopRecording` 是 `run-cases.mjs` 必备 helper：`No recording in progress` 即使以非零退出码返回也必须视为成功，其他 stop 错误才抛出。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒空壳长视频——每 case 开头先兜底一次
-4. `record start` 会进入**新录制 context**，不会继承旧页面的 runtime 登录态。报告类已登录 SPA 须在 `run-cases.mjs` 为该站点定义“录制 context 初始化”：开始录制后立刻经 `eval` 恢复所需的 `localStorage` 与 JS 可写 cookie（`document.cookie`），再用 `location.reload()` 重载**当前**报告 URL 并等待页面恢复。`reload` 是这里唯一允许的整页导航；**不得**改用 `open`，也不得把 token/cookie 写入 `meta.jsonl`、截图或报告。HttpOnly cookie 无法由 `document.cookie` 恢复，仍须用已登录 profile 或站点登录流程。
-5. 每个 case 必须定义 `completionCheck`：一个可观察的 URL、DOM 或 API 条件。操作完成后轮询该条件，**不得**用固定等待代替完成判断；例如登录后出现用户菜单、报告 URL 保留 `session` 参数并出现关键区块、提交后出现成功提示或新增项。
-6. `completionCheck` 成立后，再完成一次可见页面变化并展示结果至少 3s，再 `record stop`；仅在后续媒体门槛也通过时才 PASS。达到 timeout（超时）仍不成立时，先截图/读取实际页面 → `record stop` 落盘证据 → FAIL 或 BLOCKED。`record stop` 是收尾动作，不是完成条件。
-7. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先只 `close` 本 case `--session` 后重试一次原生**（subagent **不得** `close --all` / 全局 pkill；需要套件级清理时回报编排），仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
+1. `const runner = createPlaywrightCase(reportDir, caseId, { videoPath })`，再 `await runner.run(async ({ page }) => { … })`；禁止自行 launch，避免绕过认证、录屏和资源清理。
+2. 用 Playwright 原生 locator 操作：`getByRole` / `getByLabel` / `locator`，每次操作后以 URL、DOM 或 API 外部事实验证效果；不要另造浏览器 DSL。
+3. 每个 case 必须定义 `completionCheck`：一个可观察的 URL、DOM 或 API 条件。操作完成后通过 locator assertion、`waitForURL` 或 `waitForFunction` 轮询，**不得**用固定等待代替完成判断。
+4. `completionCheck` 成立后，再完成一次无副作用的可见页面变化（滚动、展开等）并展示结果至少 3s；随后让 `runner.run` 正常结束。context 关闭是录屏落盘动作，不是业务完成条件。
+5. 达到 timeout（超时）仍不成立时，先 `page.screenshot` 和读取实际页面；抛出 FAIL/BLOCKED。`createPlaywrightCase` 的 `finally` 仍会关闭 context、保存失败视频并关闭 browser。
+6. callback 结束后立刻 `validateVideo(webmPath)`：duration **≥ 4s** 且帧数 **≥ 32** 才采用。录屏不合格只允许同后端重试一次，仍失败再分镜回退；业务 FAIL 不能因视频合格而改判 PASS。
+7. 网络错误摘要只保留 origin、HTTP status 与白名单 `net::ERR_*`，禁止记录 pathname、query、header、cookie 或 token。
 
-**录中点击回退（SPA 因 `record start` 重挂载）**：`record start`（视口/焦点事件）可能触发 React 等 SPA 重渲染、DOM 重建——录前有效的 ref/eval 全部落空（元素「消失」、ref 几秒内过期）。ref 点击录中失败时改**轮询 eval 点击**：循环 ≤30 次 `{ eval 找元素；找到就 click；等 200ms }`，等重挂载完成后点中（实测第 8~9 次命中）。不要因此停止录制或重启浏览器。代码见 [reference.md](reference.md)「原生 record 成功契约」
+```js
+import {
+  createPlaywrightCase,
+  validateVideo,
+} from "/ABS/tple-skill/scripts/lib/tple-playwright.mjs";
 
-```bash
-# 录后验收：时长 + 实际帧数（-count_frames 逐帧解算，比体积可靠）
-ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 videos/02-xxx.webm
-ffprobe -v error -count_frames -select_streams v:0 \
-  -show_entries stream=nb_read_frames -of default=nw=1:nk=1 videos/02-xxx.webm
+const webmPath = path.join(reportDir, "videos", `${caseId}.webm`);
+const runner = createPlaywrightCase(reportDir, caseId, { videoPath: webmPath });
+
+await runner.run(async ({ page }) => {
+  await page.goto(WEB_URL);
+  await page.getByRole("button", { name: "生成报告" }).click();
+  await page.waitForFunction(
+    () => location.search.includes("session=") &&
+      Boolean(document.querySelector("[data-report-ready]")),
+    null,
+    { timeout: 600_000 },
+  ); // completionCheck
+  await page.mouse.wheel(0, 500); // 可见、无副作用的结果展示
+  await page.waitForTimeout(3_000);
+});
+
+validateVideo(webmPath);
 ```
 
-**分镜回退**（原生 < 4s 时）：关键步骤 `screenshot` → ffmpeg concat（每帧约 1.5–1.8s）。  
-`scale=trunc(iw/2)*2:trunc(ih/2)*2` **必须**（375 奇数宽会导致空 mp4）。
+**分镜回退**（Playwright 同后端重试一次仍不达标时）：关键步骤 `page.screenshot` → ffmpeg concat（每帧约 1.5–1.8s）。`scale=trunc(iw/2)*2:trunc(ih/2)*2` **必须**（奇数宽会导致空 mp4）。
 
-**黑屏两个坑（必读）：**
+**纯 API case 也必须有媒体**：至少录制一个可见结果页或生成 PNG；报告中每个 id 在 `videos/` 下至少有视频或 poster，不能指向空文件。
 
-1. **record 在页面渲染前 start → 开头黑帧。** 先 `open` + `wait` 等页面渲染完成，再 `record start`；不要在 open 之前或同一拍 start。
-2. **纯 API case 没有录屏/截图 → 报告引用不存在的媒体 → 播放器黑块。** 每个 case 都必须产出 mp4 或 png（哪怕用终端输出截图做分镜）。生成报告前校验：meta 里每个 id 在 `videos/` 下至少有 `.mp4` 或 `.png`，缺了就补，勿让报告指向空文件。
+#### Playwright 操作要点
 
-已知仍易把原生打短、可接受回退的场景：`kill -STOP` API + 长轮询；录中反复 `set viewport`（如 375 移动端）。
+- 默认只经 `createPlaywrightCase`；context、browser、临时视频目录由库在 `finally` 清理。
+- 输入用 locator `.fill()`；点击优先 `getByRole` 等用户可感知语义，避免脆弱的动态 class。
+- 决策点用 `page.screenshot()` + DOM/locator 双通道判断；点击后验证 URL、DOM 或 API 效果。
+- `.tple-auth-state.json` 仅由 suite CLI 维护；run-cases 不读取具体 cookie/token，teardown 会删除。
+- 同步更新 `runs.json`：该 case 的 `lastRanAt` 与 `runCount`；顶层 `usage` 不得被 `logCase` 抹掉。
+- 关键帧截图须可点击放大（模板已带 lightbox，勿去掉）。
 
-#### agent-browser 操作要点
+#### agent-browser legacy 回退
 
-- **写脚本前先过一遍命令速查**（[reference.md](reference.md) 开头「最小命令速查」，或 `agent-browser skills get core`）：`@` 只配 ref（`@e3`）、CSS 选择器不带 `@`、`eval` 的 JS 用双引号包裹、读文本用 `get text body`（没有裸 `body` 命令）
-- **浏览器只经 `createBrowser`**：`browser.run(caseId, ["open", url])` 等；库自动 `--session` + `--profile`。结束 `browser.closeSession(caseId)`。套件级清理**只** `tple-browser suite-boot|suite-teardown`
-- **输入用 `fill @ref text`**（自带清空）；失败再用页面内设 value + `input`/`change` 事件  
-  - **禁止** `press Meta+a` / `Cmd+A`：按键可能漏到 macOS 前台（曾误出「关于本机」等系统窗）
-- 登录态：报告类已登录 SPA 在 `record start` 后必须执行站点专属的录制 context 初始化（`eval` 写回 token / JS 可写 cookie → `location.reload()`）；选项 A/B 的 profile 由 `.tple-browser.json` + 库注入，**禁止**漏带或中途删 profile
-- 页面变化后重新 `snapshot -i` 再点 ref
-- **操作前双通道判断（screenshot + DOM）**：决策点（导航后、关键/破坏性操作前、DOM 与预期不符时）先 `screenshot` 看页面再 `snapshot -i` 拿 ref，**综合判断后动手**——截图负责「页面什么状态、什么可见、有无遮罩/loading/灰态/canvas 内容」，DOM 负责「用哪个 ref 操作」。两通道冲突时信截图的可见性（DOM 有按钮但被 modal 盖住 → 先关遮罩，不硬点 ref）、信 DOM 的可操作性。a11y 树看不透（canvas/自绘控件）用 `screenshot --annotate`，编号 `[N]` 对齐 `@eN`。判断性截图放 `record start` **之前**，录中仍只做 click/fill/wait（见录屏成功契约）；决策点截，不逐原子操作截（多模态 token/时延成本）。展开见 [reference.md](reference.md)「操作前双通道判断」
-- 断言：`get text body` / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
-- **断言防假阳性**：命令报连接错误 / 页面为空时，判 BLOCKED 或重试，不能按「数据无变化」判 PASS（曾把 eval 连接失败误判成校验生效）
-- 同步更新 `runs.json`：该 case 的 `lastRanAt`（ISO）与 `runCount`（累加）；报告展示「最后跑 / 共跑 N 次」。顶层 `usage` 在出报告前另写（见 Step 6），`logCase` 不得抹掉它
-- 关键帧截图须可点击放大（模板已带 lightbox，勿去掉）
-- 关键帧仍可 `screenshot`（报告 poster / 回退分镜），但不要用 `Meta+*` 系统快捷键
+旧脚本只有在文件顶层显式声明 `const TPLE_BROWSER_BACKEND = "agent-browser-legacy"` 后，才可导入 `createBrowser` 并使用原生 record。它仍须遵守 `stopRecording()`、session 隔离和 ffprobe 门槛，详见 [reference.md](reference.md)「agent-browser-legacy」。新 case 不得选择 legacy 来规避 Playwright 契约。
 
 细节见 [reference.md](reference.md)。
 
@@ -620,19 +629,19 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 - [ ] 已定位工作根；若有 `tple-memory.md` / `.tple/memory.md` 已先读；本趟可复用经验已追加（未把站点业务断言写进 SKILL.md）
 - [ ] 报告目录在 `.tple/<slice>/`（或仓库已约定的 `docs/...`）
 - [ ] 编排已跑 `tple-browser suite-boot`（存在 `.tple-browser.json`）；套件结束已 `suite-teardown`；**未**在每个 case 前 purge
-- [ ] subagent / run-cases **未**裸调 `agent-browser`、未手写 `ab()`/`purge`；只用 `createBrowser().run` / `closeSession`
+- [ ] subagent / run-cases 使用默认 `createPlaywrightCase().run`，未自行 launch Chromium、未裸调 agent-browser、未读取认证值；legacy 脚本已显式声明后端
 - [ ] 环境阶段跑过 `check-update.mjs` 版本自检；落后时已提示用户并可跳过（未静默更新、未因未更新中止流程；--apply 前经用户确认）
 - [ ] dashboard 由 suite-boot/teardown 管理（未在 case 中反复 start/stop）
-- [ ] 检测到需登录时走了 Step 2.5；选项 A 用 `--mode reuse`；选项 B 走 `login-open`→`login-wait`→`login-done` 且登录后无 headed
+- [ ] 检测到需登录时走了 Step 2.5；选项 A 用 `--mode reuse --url`；选项 B 走 `login-open`→`login-wait`→`login-done --url`；`.tple-auth-state.json` 已生成且未进入报告
 - [ ] `check-run-cases.mjs --dir …` 通过后再派发；`run-cases` 含 logCase + `CASE_ID`；subagent 默认不改公共脚本
-- [ ] 多数 case 为原生录屏且 duration ≥ 4s；回退 case 在日志里标明
+- [ ] 多数 case 为 Playwright `recordVideo` 且 duration ≥ 4s、帧数 ≥ 32；回退 case 在日志里标明
 - [ ] 无 `Meta+a` 等易泄漏到系统的快捷键
-- [ ] 决策点（导航后/关键操作前/DOM 与预期不符）已先 screenshot + snapshot 双通道判断再动手；判断性截图在 `record start` 之前
+- [ ] 决策点（导航后/关键操作前/DOM 与预期不符）已先 screenshot + DOM/locator 双通道判断再动手
 - [ ] HTML 可双击打开，侧栏跳转、视频可播；样式来自 `assets/report.css`
 - [ ] 出报告前写入多会话合计 `usage`（拿不到则省略、不写 unsupported）；**未估算、未从 case 数倒推**
 - [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
-- [ ] 报告写明录屏方式（原生为主 / 个别分镜回退）
+- [ ] 报告写明录屏方式（Playwright 为主 / 个别分镜或 legacy 回退）
 - [ ] FAIL 的 auto-fix 由编排/单一 Fixer 改代码后重派 subagent，非多 subagent 并行改仓
 - [ ] 【调研模式】核心功能已实际走一遍；真实支付/删除/大量注册/对外发送均经用户明示（未明示的停在提交前一步）
 - [ ] 【调研模式】无凭据时报告明确标注未登录态；有凭据时凭据未写入报告正文
@@ -644,9 +653,9 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 不要 | 要 |
 |------|-----|
 | 单 LLM 会话串行包办全部 case（长上下文硬扛） | 编排锁定脚本 + 每 case 独立 subagent 串行派发 |
-| case 里裸 `agent-browser` / 手写 `ab()` / 漏 `--profile` | `createBrowser(dir).run`；profile 由状态文件强制注入 |
-| case subagent 里 `close --all` / 全局 pkill / `dashboard *` | 只 `closeSession`；套件用 `suite-boot` / `suite-teardown` |
-| 每个 case 开始前 purge / 登录后继续 headed | headed 仅 `login-open` 一次；`login-done` 后 headless + 同 profile |
+| case 里自行 `chromium.launch` / 裸调 `agent-browser` | 默认 `createPlaywrightCase(dir, id).run`；旧脚本显式声明 `agent-browser-legacy` |
+| case subagent 里 `close --all` / 全局 pkill / `dashboard *` | Playwright 资源交给 runner `finally`；套件用 `suite-boot` / `suite-teardown` |
+| 每个 case 开始前 purge / 登录后继续 headed | headed 仅 `login-open`；`login-done --url` 后导出 `storageState` |
 | 为躲 DevTools「ignored」而删掉 `--profile` | 冲突时只允许编排重新 `suite-boot`（带对 profile），禁止漏 flag |
 | subagent 改公共 `run-cases.mjs` / 跑别人的 CASE_ID | 只执行 `CASE_ID=<自己>`；脚本变更回传编排 |
 | 多个 subagent 同时改业务代码 | 单一 Fixer/编排改代码后重派 |
@@ -659,14 +668,14 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 信 `✓ Done` 不验点击效果 | 点击前查元素在不在视口内（不在先 `scrollintoview`），点击后截图/查 URL/查 API 验效果 |
 | 视口外的按钮直接 `click @ref` | 先 `scrollintoview @ref` 再点；ref 点击不自动滚动，视口外点击静默落空 |
 | 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |
-| 因一次 ~1s 空壳就放弃原生 | 先按成功契约重试（subagent 不全局杀进程）；仍短再分镜回退 |
-| `record start` 后再 `open` 目标页（0.26.0 断帧捕获，产出空壳 webm） | 录前 open + wait 就位页面再 start；录中只用点击/`back` 移动，token 用 `eval` 写回 |
-| `record start` 后假定登录态仍在（新录制 context 常丢 localStorage / JS cookie） | 在录制开始后，经 `eval` 写回站点所需 localStorage 与 `document.cookie`，再 `location.reload()` 当前 URL；不可写的 HttpOnly cookie 改走 profile / 登录流程 |
+| 因一次录屏不达标就直接分镜 | Playwright 同后端只重试一次；仍短再分镜回退 |
+| 在 run-cases 复制 profile、token 或 cookie 修补登录态 | suite CLI 导出 `.tple-auth-state.json`；`createPlaywrightCase` 自动以 `storageState` 建 context |
+| 只检查 `playwright --version` 就当环境可用 | `check-env` 必须实际加载模块并启动/关闭 Chromium |
 | 把某站点业务断言/文案坑写进 SKILL.md 反模式表 | 写入工作根 `tple-memory.md`（或当次 `run-cases` 断言）；SKILL 只留通用规则 |
 | CSS 选择器 `click` 返回 `✓ Done` 就当点上了 | 部分页面会静默落空；点击后验证 DOM/URL 效果，不过就改 snapshot ref 点击重试 |
 | 自定义组件点击无效就归因风控、反复重试 | 元素是自定义组件（tagName 带连字符 / `Ks*` 类名）→ 改坐标鼠标点击：`eval` 拿中心坐标 + `mouse move <x> <y>` → `mouse down` → `mouse up`（CDP 可信事件） |
 | 遇阻就重启浏览器（`close --all` + `pkill` 当万能药） | 有状态弹窗（Terms/引导页）在**同一实例内**处理（坐标点击）；`--profile <名字>` 每次启动都重新复制 profile，客户端存储的同意状态从「未同意」重置；套件级重启只由编排做 |
-| 被中断的录制不管，或把 `No recording in progress` 当失败 | 每 case 用 `stopRecording()` 防御性清理；它只忽略该预期状态，其他错误仍抛出 |
+| legacy 被中断的录制不管，或把 `No recording in progress` 当失败 | `agent-browser-legacy` 每 case 用 `stopRecording()` 防御性清理 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
 | 只在聊天里贴 PASS 表 | 产出可打开的 HTML + videos |
@@ -694,7 +703,8 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 
 ## 依赖工具
 
-- `agent-browser` — 浏览器操作与录屏（公网 npm 包：`npm i -g agent-browser`）
+- `playwright` + Chromium — 默认浏览器操作与录屏；`install-deps` 安装到 `~/.tple/runtime`
+- `agent-browser` — 探索、headed 登录桥接与 legacy 回退（公网 npm 包：`npm i -g agent-browser`）
 - `ffmpeg` / `ffprobe` — 视频处理（转码、分镜 concat、poster 提取、时长校验）
 - `ccusage` — session token 用量采集（`npm i -g ccusage`；出报告前 `collect-usage.mjs`）
 - Node.js 18+ — run-cases / build-report / check-env / tple-browser 脚本

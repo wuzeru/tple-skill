@@ -38,14 +38,56 @@ if (!fs.existsSync(file)) {
 const src = fs.readFileSync(file, "utf8");
 const errors = [];
 
-const hasCreateBrowser =
-  /\bcreateBrowser\b/.test(src) &&
-  (/tple-browser\.mjs/.test(src) || /from\s+['"].*tple-browser/.test(src));
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
 
-if (!hasCreateBrowser) {
-  errors.push(
-    "必须 import createBrowser（来自 scripts/lib/tple-browser.mjs），禁止手写 agent-browser 封装",
+const executableSource = stripComments(src);
+const isLegacyBackend =
+  /^\s*(?:export\s+)?const\s+TPLE_BROWSER_BACKEND\s*=\s*["']agent-browser-legacy["']\s*;?\s*$/m.test(
+    executableSource,
   );
+
+const hasCreateBrowser =
+  /\bcreateBrowser\b/.test(executableSource) &&
+  (/tple-browser\.mjs/.test(executableSource) ||
+    /from\s+['"].*tple-browser/.test(executableSource));
+
+if (isLegacyBackend) {
+  if (!hasCreateBrowser) {
+    errors.push(
+      "legacy 后端必须 import createBrowser（来自 scripts/lib/tple-browser.mjs）",
+    );
+  }
+} else {
+  const hasCreatePlaywrightCase =
+    /\bcreatePlaywrightCase\b/.test(executableSource) &&
+    (/tple-playwright\.mjs/.test(executableSource) ||
+      /from\s+['"].*tple-playwright/.test(executableSource));
+  if (!hasCreatePlaywrightCase) {
+    errors.push(
+      "默认后端必须 import createPlaywrightCase（来自 scripts/lib/tple-playwright.mjs）；旧 createBrowser 需显式声明 agent-browser-legacy",
+    );
+  }
+  if (/\bchromium\s*\.\s*(?:launch|launchPersistentContext)\s*\(/.test(src)) {
+    errors.push(
+      "禁止自行 chromium.launch/launchPersistentContext；请用 createPlaywrightCase 管理录屏与清理",
+    );
+  }
+  if (
+    /authing_token|auth_status|document\s*\.\s*cookie|localStorage\s*\.\s*(?:getItem|setItem)/i.test(
+      executableSource,
+    ) ||
+    /\.tple-auth-state\.json|authStatePath\s*\(|\.\s*(?:cookies|storageState)\s*\(|\[\s*["'](?:cookies|storageState)["']\s*\]\s*\(/i.test(
+      executableSource,
+    )
+  ) {
+    errors.push(
+      "默认 Playwright runner 禁止读取认证值；登录态只通过 storageState 注入且不得写入报告产物",
+    );
+  }
 }
 
 const bareSpawn = [
@@ -76,7 +118,7 @@ if (/pkill\s+.*agent-browser|pkill.*user-data-dir=\.\*\/agent-browser/.test(src)
 
 const hasRecordStop = /["']record["']\s*,\s*["']stop["']/.test(src);
 const hasStopRecordingHelper = /function\s+stopRecording\s*\(/.test(src);
-if (hasRecordStop && !hasStopRecordingHelper) {
+if (isLegacyBackend && hasRecordStop && !hasStopRecordingHelper) {
   errors.push(
     "录制脚本必须定义 stopRecording()：仅 No recording in progress 可忽略，其他 record stop 错误必须失败",
   );

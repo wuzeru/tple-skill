@@ -7,11 +7,12 @@
  *
  * 检查项：
  *   1. Node.js ≥ 18（run-cases.mjs / build-report.mjs）
- *   2. agent-browser（浏览器操作与 record 录屏）
- *   3. ffmpeg（转码 / 分镜 concat / poster 提取）
- *   4. ffprobe（录后时长校验）
- *   5. ccusage（session token 用量采集；全局或本机已缓存 npx，探测不联网安装）
- *   6. --url 给了目标地址时，探测 web 可达性
+ *   2. Playwright + Chromium（默认 case 执行与录屏）
+ *   3. agent-browser（探索与兼容回退）
+ *   4. ffmpeg（转码 / 分镜 concat / poster 提取）
+ *   5. ffprobe（录后时长校验）
+ *   6. ccusage（session token 用量采集；全局或本机已缓存 npx，探测不联网安装）
+ *   7. --url 给了目标地址时，探测 web 可达性
  *   · token-meter（软探测，不阻断）：ccusage → 本地账本 → 不支持则提示
  *
  * 可选 --mode research：调研模式。目标为公网 URL，无需本地 dev server；
@@ -20,6 +21,7 @@
  * 全部通过退出码 0；缺依赖退出码 1（打印安装指引）。
  */
 import { spawnSync } from "node:child_process";
+import { probePlaywright } from "./lib/playwright-runtime.mjs";
 import {
   probeCcusageInstall,
   probeTokenMeterLine,
@@ -48,14 +50,22 @@ if (major >= 18) {
   bad.push({ bin: "node", hint: `需要 Node 18+，当前 v${process.versions.node}` });
 }
 
-// 2. agent-browser
+// 2. Playwright：模块存在不等于浏览器可用，必须真实启动一次
+const playwrightProbe = await probePlaywright();
+if (playwrightProbe.ok) {
+  ok.push({ bin: "playwright", info: playwrightProbe.info });
+} else {
+  bad.push({ bin: "playwright", hint: playwrightProbe.hint });
+}
+
+// 3. agent-browser
 probe("agent-browser", ["--version"], "npm i -g agent-browser && agent-browser install");
 
-// 3+4. ffmpeg / ffprobe
+// 4+5. ffmpeg / ffprobe
 probe("ffmpeg", ["-version"], "brew install ffmpeg / winget install Gyan.FFmpeg / choco install ffmpeg（按系统包管理器）");
 probe("ffprobe", ["-version"], "随 ffmpeg 一起安装");
 
-// 5. ccusage（硬依赖：全局或 npx --no-install；安装走 install-deps）
+// 6. ccusage（硬依赖：全局或 npx --no-install；安装走 install-deps）
 const ccProbe = probeCcusageInstall();
 if (ccProbe.ok) {
   ok.push({ bin: "ccusage", info: ccProbe.info });
@@ -63,7 +73,7 @@ if (ccProbe.ok) {
   bad.push({ bin: "ccusage", hint: ccProbe.hint });
 }
 
-// 6. 可选：目标 web 可达性（用 curl，macOS/Linux 自带）
+// 7. 可选：目标 web 可达性（用 curl，macOS/Linux 自带）
 const urlIdx = process.argv.indexOf("--url");
 const targetUrl = urlIdx >= 0 ? process.argv[urlIdx + 1] : "";
 const modeIdx = process.argv.indexOf("--mode");
