@@ -115,3 +115,49 @@ test("注释不能伪造 createPlaywrightCase import", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /默认后端必须 import createPlaywrightCase/);
 });
+
+test("注释中的 chromium.launch 不触发默认门闩", () => {
+  const result = check(`
+    import { createPlaywrightCase } from "/skill/scripts/lib/tple-playwright.mjs";
+    // 禁止自行 chromium.launch({ headless: true })
+    const runner = createPlaywrightCase(reportDir, caseId);
+    await runner.run(async ({ page }) => page.goto(targetUrl));
+  `);
+
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("注释中的裸 agent-browser 调用不触发门闩", () => {
+  const result = check(`
+    import { createPlaywrightCase } from "/skill/scripts/lib/tple-playwright.mjs";
+    // spawnSync("agent-browser", ["open", targetUrl]);
+    const runner = createPlaywrightCase(reportDir, caseId);
+    await runner.run(async ({ page }) => page.goto(targetUrl));
+  `);
+
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("注释中的 record stop 不要求 stopRecording", () => {
+  const result = check(`
+    import { createBrowser } from "/skill/scripts/lib/tple-browser.mjs";
+    const TPLE_BROWSER_BACKEND = "agent-browser-legacy";
+    const browser = createBrowser(reportDir);
+    // browser.run(caseId, ["record", "stop"]);
+    browser.run(caseId, ["open", targetUrl]);
+  `);
+
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("legacy 真实 record stop 仍必须定义 stopRecording", () => {
+  const result = check(`
+    import { createBrowser } from "/skill/scripts/lib/tple-browser.mjs";
+    const TPLE_BROWSER_BACKEND = "agent-browser-legacy";
+    const browser = createBrowser(reportDir);
+    browser.run(caseId, ["record", "stop"]);
+  `);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /stopRecording/);
+});

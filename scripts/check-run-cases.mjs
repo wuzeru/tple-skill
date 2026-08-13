@@ -71,7 +71,11 @@ if (isLegacyBackend) {
       "默认后端必须 import createPlaywrightCase（来自 scripts/lib/tple-playwright.mjs）；旧 createBrowser 需显式声明 agent-browser-legacy",
     );
   }
-  if (/\bchromium\s*\.\s*(?:launch|launchPersistentContext)\s*\(/.test(src)) {
+  if (
+    /\bchromium\s*\.\s*(?:launch|launchPersistentContext)\s*\(/.test(
+      executableSource,
+    )
+  ) {
     errors.push(
       "禁止自行 chromium.launch/launchPersistentContext；请用 createPlaywrightCase 管理录屏与清理",
     );
@@ -98,26 +102,38 @@ const bareSpawn = [
   /exec\s*\(\s*['"]agent-browser/,
 ];
 for (const re of bareSpawn) {
-  if (re.test(src)) {
-    errors.push(`禁止裸调用 agent-browser（匹配 ${re}）；请用 createBrowser().run`);
+  if (re.test(executableSource)) {
+    const hint = isLegacyBackend
+      ? "请用 createBrowser().run"
+      : "默认请用 createPlaywrightCase，不要裸调 agent-browser";
+    errors.push(`禁止裸调用 agent-browser（匹配 ${re}）；${hint}`);
     break;
   }
 }
 
-if (/function\s+purge\s*\(/.test(src) && /close\s+--all|close",\s*"--all"|close',\s*'--all'/.test(src)) {
+if (
+  /function\s+purge\s*\(/.test(executableSource) &&
+  /close\s+--all|close",\s*"--all"|close',\s*'--all'/.test(executableSource)
+) {
   errors.push(
     "禁止本地 purge + close --all；套件清理只许编排 tple-browser suite-boot / suite-teardown",
   );
 }
 
-if (/pkill\s+.*agent-browser|pkill.*user-data-dir=\.\*\/agent-browser/.test(src)) {
+if (
+  /pkill\s+.*agent-browser|pkill.*user-data-dir=\.\*\/agent-browser/.test(
+    executableSource,
+  )
+) {
   errors.push(
     "禁止在 run-cases 内 pkill agent-browser Chrome；套件清理交给 suite-boot/teardown",
   );
 }
 
-const hasRecordStop = /["']record["']\s*,\s*["']stop["']/.test(src);
-const hasStopRecordingHelper = /function\s+stopRecording\s*\(/.test(src);
+const hasRecordStop = /["']record["']\s*,\s*["']stop["']/.test(executableSource);
+const hasStopRecordingHelper = /function\s+stopRecording\s*\(/.test(
+  executableSource,
+);
 if (isLegacyBackend && hasRecordStop && !hasStopRecordingHelper) {
   errors.push(
     "录制脚本必须定义 stopRecording()：仅 No recording in progress 可忽略，其他 record stop 错误必须失败",
