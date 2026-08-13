@@ -26,20 +26,22 @@ function section(html, id) {
 
 function buildReport(cases, metaLines) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tple-script-fix-report-"));
-  fs.mkdirSync(path.join(dir, "videos"));
-  fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify(cases, null, 2));
-  fs.writeFileSync(path.join(dir, "meta.jsonl"), metaLines.join("\n") + "\n");
-  for (const id of Object.keys(cases)) {
-    fs.writeFileSync(path.join(dir, "videos", `${id}.png`), PNG_1X1);
-  }
+  try {
+    fs.mkdirSync(path.join(dir, "videos"));
+    fs.writeFileSync(path.join(dir, "cases.json"), JSON.stringify(cases, null, 2));
+    fs.writeFileSync(path.join(dir, "meta.jsonl"), metaLines.join("\n") + "\n");
+    for (const id of Object.keys(cases)) {
+      fs.writeFileSync(path.join(dir, "videos", `${id}.png`), PNG_1X1);
+    }
 
-  const result = spawnSync(process.execPath, [builder, "--dir", dir], {
-    encoding: "utf8",
-  });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
-  fs.rmSync(dir, { recursive: true, force: true });
-  return html;
+    const result = spawnSync(process.execPath, [builder, "--dir", dir], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return fs.readFileSync(path.join(dir, "index.html"), "utf8");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test("纯脚本 fixLog 不渲染修复说明，case 仍按产品结果展示 PASS", () => {

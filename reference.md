@@ -669,6 +669,8 @@ const MAX_PRODUCT_ROUNDS = 3;
 const MAX_SCRIPT_ROUNDS = 10;
 const productRounds = new Map();
 const scriptRounds = new Map();
+const stagnantHistory = new Map();
+let needsRestart = false;
 let failedIds = parseFails(metaPath); // ["02-xxx", "05-yyy"]
 
 while (failedIds.length > 0) {
