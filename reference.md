@@ -653,19 +653,28 @@ kill -CONT "$(lsof -tiTCP:<api-port> -sTCP:LISTEN | head -1)" 2>/dev/null
 
 ## auto-fix loop 参考实现
 
+报告只服务产品判定。每轮 FAIL 先判根因 `cause: "product" | "script"`：
+
+| 根因 | 改什么 | 写入 | 上限 |
+|------|--------|------|------|
+| `script` | 只改 `run-cases.mjs` 该 case 片段 | 工作根 `.tple/script-fix-log.jsonl`；**不写入** `cases.json` 的 bug/fix/fixLog，也**不写入**最终 `meta.jsonl` notes | 10 |
+| `product` | 改业务代码 | `cases.json` bug/fix/fixLog（`cause: "product"`）；notes 可用产品修复摘要 | 3 |
+
+两类预算按 case 独立计数。连续 2 轮 notes 无变化仍标 BLOCKED。文件数刹车只约束 product。
+
 ### 循环伪代码
 
 ```js
-let round = 0;
-const MAX_ROUNDS = 3;
+const MAX_PRODUCT_ROUNDS = 3;
+const MAX_SCRIPT_ROUNDS = 10;
+const productRounds = new Map();
+const scriptRounds = new Map();
 let failedIds = parseFails(metaPath); // ["02-xxx", "05-yyy"]
 
-while (failedIds.length > 0 && round < MAX_ROUNDS) {
-  round++;
-  const roundLog = [];
+while (failedIds.length > 0) {
+  const attempted = [];
 
   for (const id of failedIds) {
-    // 1. 证据采集
     const evidence = {
       stderr: getCaseStderr(id),
       failPng: exists(`videos/${id}-fail.png`) ? readImg(...) : null,
@@ -674,31 +683,47 @@ while (failedIds.length > 0 && round < MAX_ROUNDS) {
       expected: cases[id].expected,
     };
 
-    // 2. 分析根因（Claude 自己做，不需要外部 API）
-    const analysis = analyzeFailure(evidence);
+    const cause = classifyCause(evidence); // "product" | "script"
 
-    // 3. 改代码（Edit/Write 工具直接操作项目文件）
-    const changes = applyFix(analysis);
+    if (cause === "script") {
+      if ((scriptRounds.get(id) || 0) >= MAX_SCRIPT_ROUNDS) continue;
+      const changes = applyScriptFix(evidence); // 只动 run-cases.mjs
+      appendJsonl(".tple/script-fix-log.jsonl", {
+        id, cause: "script", round: (scriptRounds.get(id) || 0) + 1,
+        bug: changes.bug, fix: changes.summary, files: changes.files,
+      });
+      scriptRounds.set(id, (scriptRounds.get(id) || 0) + 1);
+      attempted.push(id);
+      continue;
+    }
 
-    // 4. 记录
-    roundLog.push({ id, round, files: changes.files, change: changes.summary });
+    if ((productRounds.get(id) || 0) >= MAX_PRODUCT_ROUNDS) continue;
+    const changes = applyProductFix(evidence);
+    cases[id].cause = "product";
+    cases[id].bug = cases[id].bug || changes.bug;
+    cases[id].fix = changes.summary;
     cases[id].fixLog = cases[id].fixLog || [];
-    cases[id].fixLog.push(roundLog.at(-1));
+    cases[id].fixLog.push({
+      round: (productRounds.get(id) || 0) + 1,
+      cause: "product",
+      bug: changes.bug,
+      fix: changes.summary,
+      files: changes.files,
+    });
+    productRounds.set(id, (productRounds.get(id) || 0) + 1);
+    attempted.push(id);
   }
 
-  // 5. 重启 dev server（如果项目有 hot reload 则可跳过）
+  if (attempted.length === 0) break;
+
   if (needsRestart) restartDevServer();
+  await rerunCases(attempted);
 
-  // 6. 仅重跑本轮改过的 FAIL case
-  await rerunCases(failedIds);
-
-  // 7. 检查进展
   const newFailed = parseFails(metaPath);
-  const stagnant = failedIds.filter(id =>
+  const stagnant = attempted.filter(id =>
     newFailed.includes(id) &&
-    getNotes(id) === getPrevNotes(id) // notes 没变 = 没进展
+    getNotes(id) === getPrevNotes(id)
   );
-  // 连续 2 轮无进展 → BLOCKED
   for (const id of stagnant) {
     if (stagnantHistory.get(id) >= 1) setStatus(id, "BLOCKED");
     else stagnantHistory.set(id, (stagnantHistory.get(id) || 0) + 1);
@@ -707,6 +732,10 @@ while (failedIds.length > 0 && round < MAX_ROUNDS) {
   failedIds = parseFails(metaPath).filter(id => getStatus(id) !== "BLOCKED");
 }
 ```
+
+`classifyCause`：selector not found / strict mode / 读错节点 / 未等 hydrate / 视频过短因停留不够 → `script`；按步骤走完后产品行为仍不符 `expected` → `product`。
+
+最终 `meta.jsonl` notes = 最近一次 subagent 的产品观察。脚本轮次**禁止**用「修复 N 轮: R1=locator…」覆盖 notes。
 
 ### 证据采集优先级
 
@@ -720,45 +749,50 @@ while (failedIds.length > 0 && round < MAX_ROUNDS) {
 
 | 条件 | 处理 |
 |------|------|
-| round >= 3 | 停止循环，保留 FAIL，报告写「尝试 3 轮未修复」 |
+| 产品 round >= 3 | 停止该 case，保留 FAIL，报告写「尝试 3 轮未修复」 |
+| 脚本 round >= 10 | 停止该 case，保留 FAIL；不写报告修复说明 |
 | 同一 case 连续 2 轮 notes 无变化 | 标 BLOCKED，从 failedIds 移除 |
-| 单轮修复改动 > 5 个文件 | 停止，向用户确认 |
-| 修复过程产生新文件 > 3 个 | 停止，向用户确认 |
+| 产品单轮修复改动 > 5 个文件 | 停止，向用户确认 |
+| 产品修复过程产生新文件 > 3 个 | 停止，向用户确认 |
 
 ### fixLog 写入格式
 
-`meta.jsonl` notes 字段：
-```
-02-xxx|标题|PASS|修复 2 轮: R1=button selector 改为 data-testid, R2=补 onSubmit 校验
+**脚本轮次**只进 `.tple/script-fix-log.jsonl`（`build-report` 不读）：
+
+```jsonl
+{"id":"01-profile","cause":"script","round":1,"bug":"locator 太宽","fix":"收窄 locator","files":["run-cases.mjs"]}
 ```
 
-`cases.json` 修复字段（报告会渲染「Bug 点 / 修复方案」）：
+**产品轮次**才进 `meta.jsonl` notes / `cases.json`（报告渲染「Bug 点 / 修复方案」）：
+
+```
+02-xxx|标题|PASS|修复 1 轮: R1=补 onSubmit 校验
+```
+
 ```json
 {
   "02-xxx": {
     "uc": "UC-5",
     "steps": "...",
     "expected": "...",
+    "cause": "product",
     "bug": "汇总：最初失败现象",
     "fix": "汇总：最终怎么修好的",
     "fixLog": [
       {
         "round": 1,
+        "cause": "product",
         "bug": "本轮看到的问题",
         "fix": "本轮改法",
-        "files": ["src/Dialog.tsx"]
-      },
-      {
-        "round": 2,
-        "bug": "…",
-        "fix": "…",
-        "files": ["src/Dialog.tsx", "src/validate.ts"],
+        "files": ["src/Dialog.tsx"],
         "change": "旧字段，等同 fix"
       }
     ]
   }
 }
 ```
+
+`build-report` 忽略 `cause: "script"` 以及 files 仅 `run-cases.mjs` 的条目；无产品修复时不渲染「修复说明」。
 
 ---
 
