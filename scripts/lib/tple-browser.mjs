@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 
 export const STATE_FILE = ".tple-browser.json";
+export const COMMAND_LOG_FILE = "commands.jsonl";
 export const PHASES = Object.freeze({
   cold: "cold",
   login: "login",
@@ -94,25 +95,83 @@ export function requireState(reportDir) {
   return state;
 }
 
+function truncateCommandText(value, limit = 500) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function sanitizeCommandArgv(args) {
+  return args.map((arg, index) => {
+    if (args[index - 2] === "fill") return "***";
+
+    if (args[index - 1] === "eval") {
+      const script = String(arg);
+      if (/\b(fill|value)\s*(?:\(|=|:)/i.test(script)) {
+        return "[redacted eval]";
+      }
+      return truncateCommandText(script, 80);
+    }
+
+    return truncateCommandText(arg, 500);
+  });
+}
+
+function appendCommandLog(audit, args, result, durationMs) {
+  if (!audit?.reportDir) return;
+
+  const entry = {
+    ts: new Date().toISOString(),
+    ...(audit.phase ? { phase: audit.phase } : {}),
+    ...(audit.session ? { session: audit.session } : {}),
+    argv: sanitizeCommandArgv(args),
+    ok: result.ok,
+    status: result.status,
+    durationMs,
+    out: truncateCommandText(result.out),
+    err: truncateCommandText(result.err || result.error?.message),
+  };
+
+  try {
+    fs.appendFileSync(
+      path.join(path.resolve(audit.reportDir), COMMAND_LOG_FILE),
+      JSON.stringify(entry) + "\n",
+    );
+  } catch {
+    // 命令审计不可反向阻塞 TPLE 流程。
+  }
+}
+
+function buildAuditContext(state, session, opts = {}) {
+  if (!opts.reportDir) return undefined;
+  return {
+    reportDir: opts.reportDir,
+    phase: state.phase,
+    session,
+  };
+}
+
 /** 裸调 agent-browser（仅库内 suite 清理 / login-open 等特权路径） */
-export function rawAgentBrowser(args, { timeout = 120000, env } = {}) {
+export function rawAgentBrowser(args, { timeout = 120000, env, audit } = {}) {
   const base = { ...process.env, ...(env || {}) };
   // run 阶段 argv 带 --headed false；同时清掉环境里的 headed 强制，避免可见窗
   if (args.includes("--headed") && args.includes("false")) {
     delete base.AGENT_BROWSER_HEADED;
   }
+  const startedAt = Date.now();
   const r = spawnSync("agent-browser", args, {
     encoding: "utf8",
     timeout,
     env: base,
   });
-  return {
+  const result = {
     ok: !r.error && r.status === 0,
     status: r.status,
     out: String(r.stdout || "").trim(),
     err: String(r.stderr || "").trim(),
     error: r.error || null,
   };
+  appendCommandLog(audit, args, result, Date.now() - startedAt);
+  return result;
 }
 
 /** 目录型 profile 冷启前清 Session/Tabs，避免 Chrome 一次恢复几十个窗口 */
@@ -139,8 +198,8 @@ export function scrubProfileSessionRestore(profilePath) {
   }
 }
 
-export function suitePurge(extraProfilePath = "") {
-  rawAgentBrowser(["close", "--all"], { timeout: 30000 });
+export function suitePurge(extraProfilePath = "", audit) {
+  rawAgentBrowser(["close", "--all"], { timeout: 30000, audit });
   // 杀掉多余 daemon（曾出现 3 个 agent-browser-darwin 并存）
   if (process.platform === "win32") {
     spawnSync(
@@ -187,14 +246,14 @@ export function suitePurge(extraProfilePath = "") {
   });
 }
 
-export function dashboardStart(port) {
+export function dashboardStart(port, audit) {
   const args = ["dashboard", "start"];
   if (port) args.push("--port", String(port));
-  return rawAgentBrowser(args, { timeout: 30000 });
+  return rawAgentBrowser(args, { timeout: 30000, audit });
 }
 
-export function dashboardStop() {
-  return rawAgentBrowser(["dashboard", "stop"], { timeout: 30000 });
+export function dashboardStop(audit) {
+  return rawAgentBrowser(["dashboard", "stop"], { timeout: 30000, audit });
 }
 
 /**
@@ -304,6 +363,7 @@ export function runAgentBrowser(state, session, userArgs, opts = {}) {
   }
   const result = rawAgentBrowser(argv, {
     timeout: opts.timeout ?? 120000,
+    audit: buildAuditContext(state, session, opts),
   });
   const blob = `${result.out}\n${result.err}`;
   // daemon 已在跑时，后续命令再带 --profile/--args/--headed 会被忽略（警告）。
@@ -337,6 +397,7 @@ export function runAgentBrowser(state, session, userArgs, opts = {}) {
     const settled = settleAfterOpen(state, session, targetUrl, {
       access,
       timeout: opts.timeout,
+      reportDir: opts.reportDir,
     });
     return {
       ...result,
@@ -357,7 +418,10 @@ export function listTabs(state, session, opts = {}) {
   const access = opts.access || "run";
   const r = rawAgentBrowser(
     buildArgv(state, session, ["tab", "list", "--json"], access),
-    { timeout: opts.timeout ?? 30000 },
+    {
+      timeout: opts.timeout ?? 30000,
+      audit: buildAuditContext(state, session, opts),
+    },
   );
   try {
     const j = JSON.parse(r.out || "{}");
@@ -376,7 +440,11 @@ export function focusContentTab(state, session, opts = {}) {
   const access = opts.access || "run";
   const prefer = String(opts.preferUrl || "");
   sleepMs(400);
-  const listed = listTabs(state, session, { access, timeout: opts.timeout });
+  const listed = listTabs(state, session, {
+    access,
+    timeout: opts.timeout,
+    reportDir: opts.reportDir,
+  });
   if (!listed.tabs.length) return { ok: false, tabs: [], err: "no tabs" };
 
   const isBlank = (u) => !u || u === "about:blank" || u === "chrome://newtab/";
@@ -394,31 +462,47 @@ export function focusContentTab(state, session, opts = {}) {
   if (!target.active) {
     rawAgentBrowser(
       buildArgv(state, session, ["tab", target.tabId], access),
-      { timeout: opts.timeout ?? 30000 },
+      {
+        timeout: opts.timeout ?? 30000,
+        audit: buildAuditContext(state, session, opts),
+      },
     );
     sleepMs(300);
   }
 
   const urlR = rawAgentBrowser(
     buildArgv(state, session, ["get", "url"], access),
-    { timeout: opts.timeout ?? 30000 },
+    {
+      timeout: opts.timeout ?? 30000,
+      audit: buildAuditContext(state, session, opts),
+    },
   );
   let url = String(urlR.out || "").trim().split("\n").pop();
   // get url 偶发仍报 blank，再信 tab list
   if (isBlank(url)) {
     sleepMs(500);
-    const again = listTabs(state, session, { access, timeout: opts.timeout });
+    const again = listTabs(state, session, {
+      access,
+      timeout: opts.timeout,
+      reportDir: opts.reportDir,
+    });
     const active = again.tabs.find((t) => t.active) || target;
     url = active?.url || url;
     if (!isBlank(active?.url) && active?.tabId) {
       rawAgentBrowser(
         buildArgv(state, session, ["tab", active.tabId], access),
-        { timeout: opts.timeout ?? 30000 },
+        {
+          timeout: opts.timeout ?? 30000,
+          audit: buildAuditContext(state, session, opts),
+        },
       );
       sleepMs(300);
       const urlR2 = rawAgentBrowser(
         buildArgv(state, session, ["get", "url"], access),
-        { timeout: opts.timeout ?? 30000 },
+        {
+          timeout: opts.timeout ?? 30000,
+          audit: buildAuditContext(state, session, opts),
+        },
       );
       url = String(urlR2.out || "").trim().split("\n").pop() || active.url;
     }
@@ -445,6 +529,7 @@ export function settleAfterOpen(state, session, targetUrl, opts = {}) {
     access,
     preferUrl: targetUrl,
     timeout: opts.timeout,
+    reportDir: opts.reportDir,
   });
   if (focused.ok) return focused;
 
@@ -453,13 +538,17 @@ export function settleAfterOpen(state, session, targetUrl, opts = {}) {
     const js = `location.assign(${JSON.stringify(targetUrl)})`;
     rawAgentBrowser(
       buildArgv(state, session, ["eval", js], access),
-      { timeout: opts.timeout ?? 60000 },
+      {
+        timeout: opts.timeout ?? 60000,
+        audit: buildAuditContext(state, session, opts),
+      },
     );
     sleepMs(800);
     focused = focusContentTab(state, session, {
       access,
       preferUrl: targetUrl,
       timeout: opts.timeout,
+      reportDir: opts.reportDir,
     });
     if (focused.ok) return focused;
   }
@@ -502,6 +591,7 @@ export function createBrowser(reportDir) {
       return runAgentBrowser(state, resolved, args, {
         ...opts,
         access: "run",
+        reportDir: dir,
       });
     },
 
@@ -521,6 +611,7 @@ export function createBrowser(reportDir) {
       return runAgentBrowser(state, resolved, ["close"], {
         ...opts,
         access: "run",
+        reportDir: dir,
       });
     },
 

@@ -176,6 +176,99 @@ function formatUsageMeta(usage) {
   return `${prefix}：${parts.join(" · ")}${suffix}`;
 }
 
+const AGENT_BROWSER_COMMANDS = new Set([
+  "back",
+  "click",
+  "close",
+  "eval",
+  "fill",
+  "get",
+  "keyboard",
+  "mouse",
+  "open",
+  "record",
+  "screenshot",
+  "scrollintoview",
+  "select",
+  "snapshot",
+  "tab",
+  "wait",
+]);
+
+function getCommandName(argv) {
+  return Array.isArray(argv)
+    ? argv.find((value) => AGENT_BROWSER_COMMANDS.has(value)) || "unknown"
+    : "unknown";
+}
+
+function loadCommandAudit(dir) {
+  const logPath = path.join(dir, "commands.jsonl");
+  if (!fs.existsSync(logPath)) return new Map();
+
+  const sessions = new Map();
+  for (const line of fs.readFileSync(logPath, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (!entry.session) continue;
+      const entries = sessions.get(entry.session) || [];
+      entries.push(entry);
+      sessions.set(entry.session, entries);
+    } catch {
+      // 单行损坏不应阻断历史报告构建。
+    }
+  }
+  return sessions;
+}
+
+function renderCommandAudit(caseId, entries) {
+  if (!entries?.length) return "";
+
+  const commands = entries.map((entry) => getCommandName(entry.argv));
+  const failures = entries.filter((entry) => !entry.ok);
+  const failedCommands = [...new Set(
+    failures.map((entry) => getCommandName(entry.argv)),
+  )].join("、");
+  const fillEntries = entries.filter(
+    (entry) => getCommandName(entry.argv) === "fill",
+  );
+  const isRedacted = fillEntries.every(
+    (entry) => Array.isArray(entry.argv) && entry.argv.at(-1) === "***",
+  );
+  const sequence = commands.slice(0, 8).map(esc).join(" <span>→</span> ");
+  const rows = entries
+    .map((entry) => {
+      const result = entry.ok ? "OK" : `FAIL (${entry.status ?? "—"})`;
+      const details = entry.err || entry.out || "—";
+      return `<tr>
+        <td>${esc(entry.ts || "—")}</td>
+        <td><code>${esc(JSON.stringify(entry.argv || []))}</code></td>
+        <td class="${entry.ok ? "command-ok" : "command-fail"}">${esc(result)}</td>
+        <td>${esc(`${entry.durationMs ?? "—"}ms`)}</td>
+        <td>${esc(details)}</td>
+      </tr>`;
+    })
+    .join("\n");
+
+  return `<aside class="command-audit">
+      <div class="command-audit-head">
+        <h3>命令审计</h3>
+      </div>
+      <p><strong>${entries.length}</strong> 条命令 · 失败 ${failures.length} 条 · session <code>${esc(caseId)}</code></p>
+      <p class="command-sequence">${sequence}</p>
+      <p class="command-audit-status">${fillEntries.length === 0 || isRedacted ? "输入参数已脱敏" : "存在未脱敏输入"}${failedCommands ? ` · 失败命令：${esc(failedCommands)}` : ""}</p>
+      <details class="command-details">
+        <summary>展开逐条流水</summary>
+        <div class="command-table-wrap">
+          <table>
+            <thead><tr><th>时间</th><th>argv</th><th>结果</th><th>耗时</th><th>输出 / 错误</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </details>
+    </aside>`;
+}
+
 /**
  * 有修复时展示：Bug 点 + 修复方案（+ 可选分轮次）
  * 兼容旧字段 change；新字段优先 bug / fix
@@ -278,6 +371,7 @@ if (fs.existsSync(runsPath)) {
   }
 }
 const sessionUsage = runStats.usage;
+const commandAudit = loadCommandAudit(dir);
 
 const VALID_STATUS = new Set(["PASS", "FAIL", "BLOCKED", "OBSERVE"]);
 const rawLines = fs
@@ -362,6 +456,7 @@ const sections = rows
       RUN_COUNT: esc(String(r.runCount || 0)),
       FAIL_SHOT: failShot,
       FIX_LOG: fixHtml,
+      COMMAND_AUDIT: renderCommandAudit(r.id, commandAudit.get(r.id)),
     });
   })
   .join("\n");

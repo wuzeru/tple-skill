@@ -102,11 +102,25 @@ status 仅用：`PASS` | `FAIL` | `BLOCKED`（调研模式另允许 `OBSERVE`，
 
 - **case 条目**：报告 case 头展示 `最后跑 2026-08-02 21:04 · 共跑 3 次`（Asia/Shanghai）
 - **`usage`（保留键，勿用作 case id）**：编排 + 全部 case subagent 会话合计用量，不是单个 case。由编排在出报告前写入：
+
   - 有数字：`{ input, output, cacheRead, total, source }`（至少 `total` + `source`）→ 报告头渲染用量行
   - 不支持 / 拿不到外部事实：`collect-usage` **不写** `usage`（若已有则删除）；报告头省略用量行（禁止编造、也不渲染「不支持」文案）
   - 老报告无 `usage` 字段：头部不渲染用量行（向后兼容）
 - **`source`**：`ccusage` / `transcript` / `opencode-local` 等（有用量时）
 - **采集降级**：ccusage → 本地账本 → 省略（禁止估算）
+
+## commands.jsonl
+
+与 `meta.jsonl` / `runs.json` 同目录。`tple-browser` 每执行一条 `agent-browser` 命令，就追加一行 JSON，供跨机器排障和审计。HTML 报告会在各 case 卡片中展示精简审计摘要（命令数、失败数、关键命令序列、脱敏状态与文件链接）；完整流水仍只保留在本文件，避免淹没 case 级叙事。
+
+```json
+{"ts":"2026-08-12T04:00:00.000Z","phase":"run","session":"01-login","argv":["--session","01-login","--args","--disable-session-crashed-bubble,--no-first-run,--no-default-browser-check,--headless=new,--hide-scrollbars","--headed","false","open","https://example.com"],"ok":true,"status":0,"durationMs":328,"out":"https://example.com","err":""}
+```
+
+- 字段：`ts`、`phase`（可用时）、`session`（可用时）、`argv`、`ok`、`status`、`durationMs`、`out`、`err`。
+- `fill` 的值一律写为 `***`；可疑 `eval` 脚本会被整体打码。不要把凭据放进其他命令参数。
+- `out` / `err` 会折叠换行并各截断到约 500 字符，避免 `snapshot -i` 等大输出膨胀报告目录。
+- 日志写入失败会静默降级，绝不能改变浏览器命令本身的成功或失败结果。
 
 出报告前：
 
