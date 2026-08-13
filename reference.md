@@ -174,6 +174,22 @@ browser.closeSession(caseId);
 // browser.purge / closeAll / dashboard → throw
 ```
 
+`record stop` 的「未在录制」返回在部分版本中是非零退出码；生成的 `run-cases.mjs` 必须用以下 helper，不能直接把 `browser.run(id, ["record", "stop"])` 包进通用失败守卫：
+
+```js
+function stopRecording(id) {
+  const result = browser.run(id, ["record", "stop"]);
+  const message = `${result.out}\n${result.err}`;
+
+  if (result.ok || /No recording in progress/i.test(message)) {
+    return;
+  }
+  throw new Error(`record stop 失败：${message}`);
+}
+```
+
+每个原生录制 case 在 `record start` 前调用一次；录制结束也调用它。这样不会吞掉真实的 stop 错误，却能把「没有残留录制」当作预期状态继续执行。
+
 派发前：`node $SKILL_DIR/scripts/check-run-cases.mjs --dir docs/<slice>-e2e`
 
 ### 清理残留（已封装，勿在 run-cases 复制）
@@ -267,17 +283,71 @@ agent-browser --session tple get url                # 验证连接可用
 ensureLoggedIn / preparePage     # 录外：open + wait，页面完全就位
 record stop                      # 防御性：幂等，无录制时返回 No recording in progress 不报错
 record start path.webm
-writeToken（eval 写 localStorage）# ⚠️ 录中不要 open，会断帧捕获
-actions（点击/填表；页间移动用 click 链接或 back）+ agent-browser wait
-wait 1500–2000                   # 结尾停顿
-record stop
+restoreRecordingContextAuth      # 新录制 context：eval 写 localStorage / document.cookie → location.reload()
+actions（点击/填表；页间移动用 click 链接或 back）
+waitForCompletion(completionCheck, timeoutMs)
+performVisiblePageChange          # 滚动、展开或其他无副作用交互
+wait ≥3000                        # completionCheck 成立后展示结果；仍以 ffprobe 验收媒体门槛
+record stop                       # 成功 / 超时均收尾落盘，非完成条件
 ffprobe duration ≥4s 且帧数持续（-count_frames，≈10fps×秒数）采用；否则按下方重试；仍短再分镜回退
 # ⚠️ 不用字节体积判健康：VP9 10fps 下 5s 干净录制仅 ~32KB；空壳真特征=时长正常但帧数极少
 ```
 
-**防御性 `record stop`（每 case 开头必加）**：被用户中断的 `record start` 不会自动收尾，残留的录制状态会让下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒的空壳长视频（实测 165.3s）。`record stop` 无录制时返回 `No recording in progress`、不报错，开头兜底一次无副作用。
+**防御性 `record stop`（每 case 开头必加）**：被用户中断的 `record start` 不会自动收尾，残留的录制状态会让下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒的空壳长视频（实测 165.3s）。部分版本会以非零退出码返回 `No recording in progress`；必须通过上方 `stopRecording()` helper 将此特例视为成功，不能交给通用命令失败守卫。
 
-⚠️ **0.26.0 录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本必产出空视频。登录态写回用 `eval`，不用 `open` 刷新。
+⚠️ **0.26.0 录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本必产出空视频。登录态恢复用 `eval`；仅“录制 context 初始化”可用 `location.reload()` 重载当前页面，不能改用 `open`。
+
+**静态报告页必须制造可见的页面变化**：录制器按绘制帧采集，单纯 `wait` / `get text` 不会持续出帧。认证恢复后至少做一次用户可见的滚动、展开内容或无副作用的页面内交互，再展示结果至少 3 秒；仍须以 `ffprobe` 验收 4 秒媒体门槛，否则 WebM 可能只有初始的 1–2 帧。
+
+### completionCheck：以页面行为决定下一步
+
+每个 case 在编排写入 `run-cases.mjs` 时必须定义 `completionCheck`，并在录制中轮询。它必须是外部可观察事实，不是固定等待，例如：登录后的用户菜单、带 `session` 参数且已渲染关键区块的报告页、提交后的成功提示或新增列表项。
+
+```js
+function waitForCompletion(id, completionCheck, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    const result = browser.run(id, ["eval", completionCheck]);
+    if (result.ok && /\btrue\b/.test(result.out)) {
+      return;
+    }
+    browser.run(id, ["wait", "250"]);
+  }
+  throw new Error("completionCheck 超时");
+}
+
+// 操作后：只在完成条件成立时才能判 PASS。
+waitForCompletion(caseId, "location.search.includes('session=') && Boolean(document.querySelector('[data-report-ready]'))");
+browser.run(caseId, ["wait", "1500"]);
+stopRecording(caseId);
+```
+
+`completionCheck` 超时也必须调用 `stopRecording()`，以落盘失败证据；然后截图/读取页面实际状态，判 `FAIL` 或 `BLOCKED`。**不要**以“等了 N 秒”判 PASS，也不要让 `record stop` 充当完成条件。
+
+### 录制 context 初始化（已登录 SPA / 报告页）
+
+`record start` 创建 fresh browser context；即使录制前页面已登录，新的录制页也可能没有原 context 的 `localStorage` 或 JS 可读 cookie。若报告页依赖这些状态，编排在 `run-cases.mjs` 中为站点准备一个**不落盘**的初始化函数，并在 `record start` 后立即执行：
+
+```js
+function buildRecordingContextInitializer({ token, authStatus }) {
+  return `(() => {
+    localStorage.setItem('authing_token', ${JSON.stringify(token)});
+    document.cookie = 'auth_status=' + encodeURIComponent(${JSON.stringify(authStatus)}) + '; Path=/; SameSite=Lax';
+    localStorage.setItem('onboarding_dismissed', 'true');
+    location.reload();
+  })()`;
+}
+
+browser.run(caseId, ["record", "start", webm]);
+browser.run(caseId, ["eval", buildRecordingContextInitializer(recordingAuth)]);
+browser.run(caseId, ["wait", "1200"]);
+```
+
+- 初始化数据仅保存在运行时变量：不得写进 `meta.jsonl`、`cases.json`、截图、视频字幕或报告。
+- `location.reload()` 必须保留当前带 session 参数的报告 URL；不要用 `open` 回到该 URL。
+- 只恢复该站点实际需要、且页面 JS 可写的状态。`HttpOnly` cookie 不能通过 `document.cookie` 设置，必须改用已登录 profile 或正常登录流程。
+- 初始化后重新读取页面文本或关键元素，确认仍在目标报告页；落到登录首页时判 `BLOCKED`，不要把未登录页面录为 PASS。
 
 **短/断帧 webm 的处理顺序（别直接回退，也别直接放弃原生）：**
 
@@ -414,12 +484,12 @@ if (!selected.length) {
 const browser = createBrowser(import.meta.dirname)
 
 # subagent 内：CASE_ID 已过滤到单案
-browser.run(id, ["record", "stop"])   # 防御性
+stopRecording(id)                      # 防御性；无录制也继续
 # ensureLoggedIn 若需写 token：browser.run(id, ["eval", "…"]) 录外
 browser.run(id, ["open", url]); browser.run(id, ["wait", "2000"])  # 录外就位
 browser.run(id, ["record", "start", webm])
 # … click/fill/wait 仅经 browser.run；录中不 open
-browser.run(id, ["record", "stop"])
+stopRecording(id)
 # ffprobe → native or slideshow
 browser.closeSession(id)              # 勿 close --all
 logCase(…)

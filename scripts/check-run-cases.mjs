@@ -74,6 +74,14 @@ if (/pkill\s+.*agent-browser|pkill.*user-data-dir=\.\*\/agent-browser/.test(src)
   );
 }
 
+const hasRecordStop = /["']record["']\s*,\s*["']stop["']/.test(src);
+const hasStopRecordingHelper = /function\s+stopRecording\s*\(/.test(src);
+if (hasRecordStop && !hasStopRecordingHelper) {
+  errors.push(
+    "录制脚本必须定义 stopRecording()：仅 No recording in progress 可忽略，其他 record stop 错误必须失败",
+  );
+}
+
 if (errors.length) {
   console.error(`check-run-cases: FAIL ${file}`);
   for (const e of errors) console.error(`  - ${e}`);

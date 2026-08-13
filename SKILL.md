@@ -339,10 +339,11 @@ node $SKILL_DIR/scripts/tple-browser.mjs suite-teardown --dir .tple/<slice>-e2e
 
 1. 录前完成登录 / 导航准备（可用 API token + `localStorage`）
 2. **录前把页面完全就位**：`open <url>` + `wait` 等渲染完成。⚠️ **0.26.0 中录中 `open`（整页导航）会断帧捕获**：`record stop` 报 `No frames captured`，webm 时长看着正常、体积只有 ~15KB 级空壳。旧版「record start 后 open 一次」的写法在该版本**必产出空视频**，不要照做
-3. **防御性 `record stop`（幂等：无录制时返回 `No recording in progress` 不报错）→ `record start <path.webm>`**。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒空壳长视频——每 case 开头先兜底一次 `record stop`
-4. 登录态需写回 token 时用 `eval` 写 localStorage（**不用 `open` 刷新页面**）；操作只做点击/填表，页间移动用**点击链接**（`click @ref`）或 `back`；停顿一律 `agent-browser wait <ms>`（不用 shell `sleep` 当录中唯一等待）
-5. 结束再 `wait` 1–2s 给观众看清结果 → `record stop`
-6. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先只 `close` 本 case `--session` 后重试一次原生**（subagent **不得** `close --all` / 全局 pkill；需要套件级清理时回报编排），仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
+3. **防御性 `stopRecording(caseId)` → `record start <path.webm>`**。`stopRecording` 是 `run-cases.mjs` 必备 helper：`No recording in progress` 即使以非零退出码返回也必须视为成功，其他 stop 错误才抛出。被中断的录制会残留状态：下一次 `record start` 报 `Recording already active`，最终 `record stop` 产出上百秒空壳长视频——每 case 开头先兜底一次
+4. `record start` 会进入**新录制 context**，不会继承旧页面的 runtime 登录态。报告类已登录 SPA 须在 `run-cases.mjs` 为该站点定义“录制 context 初始化”：开始录制后立刻经 `eval` 恢复所需的 `localStorage` 与 JS 可写 cookie（`document.cookie`），再用 `location.reload()` 重载**当前**报告 URL 并等待页面恢复。`reload` 是这里唯一允许的整页导航；**不得**改用 `open`，也不得把 token/cookie 写入 `meta.jsonl`、截图或报告。HttpOnly cookie 无法由 `document.cookie` 恢复，仍须用已登录 profile 或站点登录流程。
+5. 每个 case 必须定义 `completionCheck`：一个可观察的 URL、DOM 或 API 条件。操作完成后轮询该条件，**不得**用固定等待代替完成判断；例如登录后出现用户菜单、报告 URL 保留 `session` 参数并出现关键区块、提交后出现成功提示或新增项。
+6. `completionCheck` 成立后，再完成一次可见页面变化并展示结果至少 3s，再 `record stop`；仅在后续媒体门槛也通过时才 PASS。达到 timeout（超时）仍不成立时，先截图/读取实际页面 → `record stop` 落盘证据 → FAIL 或 BLOCKED。`record stop` 是收尾动作，不是完成条件。
+7. 立刻 `ffprobe` 双指标验收：duration **≥ 4s** 且**帧数持续（≈10fps×秒数，4s ≈ 32 帧以上）**则转 mp4 采用；**短/断帧（<4s 或帧数寥寥）先只 `close` 本 case `--session` 后重试一次原生**（subagent **不得** `close --all` / 全局 pkill；需要套件级清理时回报编排），仍短再分镜回退。**不要用字节体积判健康**：VP9 10fps 下 5s 干净录制仅 ~32KB，字节阈值会误杀真捕获；空壳的真特征是时长看着正常但**帧数极少**
 
 **录中点击回退（SPA 因 `record start` 重挂载）**：`record start`（视口/焦点事件）可能触发 React 等 SPA 重渲染、DOM 重建——录前有效的 ref/eval 全部落空（元素「消失」、ref 几秒内过期）。ref 点击录中失败时改**轮询 eval 点击**：循环 ≤30 次 `{ eval 找元素；找到就 click；等 200ms }`，等重挂载完成后点中（实测第 8~9 次命中）。不要因此停止录制或重启浏览器。代码见 [reference.md](reference.md)「原生 record 成功契约」
 
@@ -369,7 +370,7 @@ ffprobe -v error -count_frames -select_streams v:0 \
 - **浏览器只经 `createBrowser`**：`browser.run(caseId, ["open", url])` 等；库自动 `--session` + `--profile`。结束 `browser.closeSession(caseId)`。套件级清理**只** `tple-browser suite-boot|suite-teardown`
 - **输入用 `fill @ref text`**（自带清空）；失败再用页面内设 value + `input`/`change` 事件  
   - **禁止** `press Meta+a` / `Cmd+A`：按键可能漏到 macOS 前台（曾误出「关于本机」等系统窗）
-- 登录态：缓存 token；`record start` 后必须写回。选项 A/B 的 profile 由 `.tple-browser.json` + 库注入，**禁止**漏带或中途删 profile
+- 登录态：报告类已登录 SPA 在 `record start` 后必须执行站点专属的录制 context 初始化（`eval` 写回 token / JS 可写 cookie → `location.reload()`）；选项 A/B 的 profile 由 `.tple-browser.json` + 库注入，**禁止**漏带或中途删 profile
 - 页面变化后重新 `snapshot -i` 再点 ref
 - **操作前双通道判断（screenshot + DOM）**：决策点（导航后、关键/破坏性操作前、DOM 与预期不符时）先 `screenshot` 看页面再 `snapshot -i` 拿 ref，**综合判断后动手**——截图负责「页面什么状态、什么可见、有无遮罩/loading/灰态/canvas 内容」，DOM 负责「用哪个 ref 操作」。两通道冲突时信截图的可见性（DOM 有按钮但被 modal 盖住 → 先关遮罩，不硬点 ref）、信 DOM 的可操作性。a11y 树看不透（canvas/自绘控件）用 `screenshot --annotate`，编号 `[N]` 对齐 `@eN`。判断性截图放 `record start` **之前**，录中仍只做 click/fill/wait（见录屏成功契约）；决策点截，不逐原子操作截（多模态 token/时延成本）。展开见 [reference.md](reference.md)「操作前双通道判断」
 - 断言：`get text body` / snapshot；结果写入 `meta.jsonl`：`id|title|PASS|notes`
@@ -660,12 +661,12 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 连续失败就归因外部系统（风控/反自动化） | 先回基本事实：元素坐标、可见性、是否在视口内 |
 | 因一次 ~1s 空壳就放弃原生 | 先按成功契约重试（subagent 不全局杀进程）；仍短再分镜回退 |
 | `record start` 后再 `open` 目标页（0.26.0 断帧捕获，产出空壳 webm） | 录前 open + wait 就位页面再 start；录中只用点击/`back` 移动，token 用 `eval` 写回 |
-| `record start` 后假定登录态仍在（新建 context 常丢 localStorage） | 录前 `state save`，录后立刻 `state load` + 回目标页（或按站点写回 token） |
+| `record start` 后假定登录态仍在（新录制 context 常丢 localStorage / JS cookie） | 在录制开始后，经 `eval` 写回站点所需 localStorage 与 `document.cookie`，再 `location.reload()` 当前 URL；不可写的 HttpOnly cookie 改走 profile / 登录流程 |
 | 把某站点业务断言/文案坑写进 SKILL.md 反模式表 | 写入工作根 `tple-memory.md`（或当次 `run-cases` 断言）；SKILL 只留通用规则 |
 | CSS 选择器 `click` 返回 `✓ Done` 就当点上了 | 部分页面会静默落空；点击后验证 DOM/URL 效果，不过就改 snapshot ref 点击重试 |
 | 自定义组件点击无效就归因风控、反复重试 | 元素是自定义组件（tagName 带连字符 / `Ks*` 类名）→ 改坐标鼠标点击：`eval` 拿中心坐标 + `mouse move <x> <y>` → `mouse down` → `mouse up`（CDP 可信事件） |
 | 遇阻就重启浏览器（`close --all` + `pkill` 当万能药） | 有状态弹窗（Terms/引导页）在**同一实例内**处理（坐标点击）；`--profile <名字>` 每次启动都重新复制 profile，客户端存储的同意状态从「未同意」重置；套件级重启只由编排做 |
-| 被中断的录制不管，直接下一次 `record start` | 每 case 开头防御性 `record stop`（幂等）；否则报 `Recording already active`，最终 `record stop` 产出上百秒空壳 |
+| 被中断的录制不管，或把 `No recording in progress` 当失败 | 每 case 用 `stopRecording()` 防御性清理；它只忽略该预期状态，其他错误仍抛出 |
 | `press Meta+a` 清输入框 | `fill` 或页面内设 value |
 | 全 suite 共用一个 session 不 close | 每 case 新 session + close |
 | 只在聊天里贴 PASS 表 | 产出可打开的 HTML + videos |
