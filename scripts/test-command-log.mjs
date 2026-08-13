@@ -13,18 +13,27 @@ const commandPath = path.join(commandDir, "agent-browser");
 try {
   fs.mkdirSync(commandDir);
   fs.mkdirSync(reportDir);
-  fs.writeFileSync(
-    commandPath,
-    "#!/bin/sh\nprintf '%0600d\\n' 0\nprintf '%0600d\\n' 0 >&2\n",
-  );
+
+  const stubBody =
+    'process.stdout.write("0".repeat(600) + "\\n");\n' +
+    'process.stderr.write("0".repeat(600) + "\\n");\n';
+  fs.writeFileSync(commandPath, `#!${process.execPath}\n${stubBody}`);
   fs.chmodSync(commandPath, 0o755);
+  fs.writeFileSync(
+    path.join(commandDir, "agent-browser.cmd"),
+    `@echo off\r\n"${process.execPath}" "${commandPath}" %*\r\n`,
+  );
 
   const audit = {
     reportDir,
     phase: "run",
     session: "case-login",
   };
-  const env = { PATH: commandDir };
+  const env = {
+    PATH: [commandDir, path.dirname(process.execPath), process.env.PATH]
+      .filter(Boolean)
+      .join(path.delimiter),
+  };
 
   assert.equal(rawAgentBrowser(["open", "https://example.com"], { env, audit }).ok, true);
   assert.equal(rawAgentBrowser(["fill", "@e3", "demo123"], { env, audit }).ok, true);
