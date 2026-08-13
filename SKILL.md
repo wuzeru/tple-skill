@@ -28,6 +28,7 @@ description: >-
 |------|------|
 | `tple-memory.md` | **项目级记忆**（建议入库）。本项目跑 TPLE 时发现的可复用经验：登录/断言坑、选择器、站点特有可见性信号等 |
 | `.tple/<slice>/` | **本次运行产物**（默认；是否入库由项目自定）。报告、`meta.jsonl`、`runs.json`、`cases.json`、`run-cases.mjs`、`videos/`、`.tple-browser.json`、运行期 `.tple-auth-state.json` 等 |
+| `.tple/script-fix-log.jsonl` | auto-fix **脚本**轮次内部日志（不进 HTML；`build-report` 不读） |
 | `docs/user-cases.csv` | 验收模式 case 清单（团队可读的产品文档，可继续放 `docs/`）；调研草案确认后也可落盘于此或 `.tple/user-cases.csv` |
 
 **记忆怎么用（编排必做，自然发现）：**
@@ -45,7 +46,7 @@ description: >-
 
 两种模式：
 
-- **验收模式**（默认）：有代码、有仓库；编排锁定脚本后按 case 派发 subagent 录屏；FAIL 由编排 auto-fix 后重派。
+- **验收模式**（默认）：有代码、有仓库；编排锁定脚本后按 case 派发 subagent 录屏；FAIL 由编排先判 `product` / `script` 再 auto-fix 后重派（脚本 ≤10 轮不进报告，产品 ≤3 轮）。
 - **调研模式**（产品调研）：只给网址、无代码，编排探索出草案，确认后同样按 case 派发 subagent 录屏出调研报告。**核心功能写操作（创建/编辑/生成）默认允许；真实支付/删除/大量注册/对外发送需用户明示**；不改本地项目内容，走不通的路径记为发现/限制，不进 auto-fix。模式判定见 Step 0。
 
 ## 参数路由：`update`（自更新，优先于一切步骤）
@@ -90,7 +91,7 @@ TPLE **禁止**由单个 LLM 会话串行包办全部 case（长上下文会导�
 
 | 角色 | 谁 | 职责 |
 |------|----|------|
-| **编排 agent（Orchestrator）** | 加载本 skill 的主会话 | Step 0–2.5；写并锁定一份 `run-cases.mjs` + `cases.json`；**按 case 串行派发** subagent；汇总 `meta.jsonl` / 媒体校验；Step 5 auto-fix（改代码）；重派失败 case 的 subagent；Step 6–7 采集 usage（多会话合计）+ build-report + 分发 |
+| **编排 agent（Orchestrator）** | 加载本 skill 的主会话 | Step 0–2.5；写并锁定一份 `run-cases.mjs` + `cases.json`；**按 case 串行派发** subagent；汇总 `meta.jsonl` / 媒体校验；Step 5 auto-fix（先判 `product` / `script` 再改代码）；重派失败 case 的 subagent；Step 6–7 采集 usage（多会话合计）+ build-report + 分发 |
 | **Case subagent** | 每个 case 一个**独立**短会话 | **只跑自己的 `CASE_ID`**：执行 `CASE_ID=<id> node run-cases.mjs`（或等价只跑该 id）；写本 case 的媒体 + 经 `logCase` 追加 meta/runs；结束回报 `SUBAGENT_DONE <id> <STATUS>` |
 | **Fixer** | 默认即编排 agent（可另起专用会话，但仍是「单点改代码」） | 只改目标仓库代码与（必要时）`run-cases.mjs` 中该 case 片段；**禁止**多个 subagent 同时改同一仓库 |
 
@@ -114,7 +115,7 @@ Task Progress:
 - [ ] 2.5 登录态决策 → `login-open` / `login-wait` / `login-done`（或 reuse mode boot）【编排】
 - [ ] 3. 编排写好并锁定 run-cases.mjs + cases.json；`check-run-cases` 通过后再派发
 - [ ] 4. 按 case 串行派发 subagent → 各写 meta/媒体；编排 ffprobe/媒体门闩汇总
-- [ ] 5. auto-fix：编排改代码 → 只重派 FAIL case 的 subagent（≤3 轮）【仅验收】
+- [ ] 5. auto-fix：先判 `product` / `script`；脚本只改 run-cases（≤10 轮、不进报告）；产品改业务代码（≤3 轮、进报告）→ 只重派 FAIL case【仅验收】
 - [ ] 6. 编排：多会话 usage 合计写入 runs.json → build-report → index.html；可复用经验追加 `tple-memory.md`
 - [ ] 7. 分发【编排】
 ```
@@ -137,7 +138,7 @@ Task Progress:
 |------|----------|----------|
 | case 来源 | 仓库 csv / Issue / diff 总结 | agent 自主探索站点（open + snapshot 巡检 + 实际走核心功能）后总结草案 |
 | 环境 | 本地 dev server | 目标就是公网 URL，无需起服务 |
-| auto-fix | 编排改代码后**重派** FAIL case subagent（Step 5） | **不改本地项目内容**；Step 5 整体跳过，FAIL 记为「调研发现/限制」 |
+| auto-fix | 编排先判 `product` / `script` 后改代码并**重派** FAIL case subagent（Step 5；脚本 ≤10 不进报告，产品 ≤3） | **不改本地项目内容**；Step 5 整体跳过，FAIL 记为「调研发现/限制」 |
 | 断言 | 对照 expected 判 PASS/FAIL | 「路径是否可走通、行为是否符合描述」；允许 OBSERVE 观察项 |
 | 交付物 | 验收报告 | 调研报告（同模板）+ 可选「产品亮点/疑点」观察清单 |
 
@@ -464,32 +465,49 @@ for each case id in 清单（按 id 排序）:
 
 跑完 Step 4 后，如果 `meta.jsonl` 中存在 `FAIL` 状态的 case，由**编排 agent（或单一 Fixer 会话）**进入自动修复循环。**禁止**让失败 case 的 subagent 自己改业务代码。
 
+报告只服务**产品判定**。先把本轮 FAIL 根因分成两类，再决定改什么、写不写进报告、还能试几轮：
+
+| 根因 `cause` | 判据 | 改什么 | 报告 | 轮次 |
+|------|------|--------|------|------|
+| **`script`** | locator / 等待 / 录屏契约 / run-cases 写法 / skill 工具行为，产品期望本身没被证伪 | **只**改 `run-cases.mjs`（该 case 片段） | **不写入** `cases.json` 的 `bug` / `fix` / `fixLog`，也**不写入**最终 `meta.jsonl` notes 的「修复 N 轮: R1=locator…」叙事。内部追加工作根 `.tple/script-fix-log.jsonl` | 脚本最多 **10** 轮 |
+| **`product`** | 业务代码、真实 UX / 功能缺陷 | 改产品代码（可顺带改该 case 断言） | 写入 `cases.json` 的 `bug` / `fix` / `fixLog`（`cause: "product"`），报告「修复说明」 | 产品最多 **3** 轮 |
+
+同一 case 两类预算独立：先修了 4 轮脚本，再发现产品 bug，产品仍有 3 轮。最终 HTML 只展示产品期望 vs 产品结果；脚本调试不是验收结论。媒体门闩（时长/帧数）不降——脚本修好后视频仍须达标。
+
 #### 循环逻辑
 
 ```
-round = 0
-while FAIL count > 0 and round < 3:
-    round += 1
+scriptRounds = {}
+productRounds = {}
+while FAIL count > 0:
+    attempted = []
     for each FAIL case:
         1. 收集证据（见下）
-        2. 分析根因
-        3. 编排用 Edit/Write 改项目代码（必要时只改 run-cases 中该 case 片段）
-        4. 记录本轮到 fixLog[]（必填 bug + fix；并更新 case 级 bug/fix 汇总）
-    5. 重启 dev server（如需要）
-    6. 仅重派本轮涉及的 FAIL case subagent（CASE_ID=…；不跑全量、不并行）
-    7. 汇总更新后的 meta.jsonl
-    8. 如果所有 case 都 PASS → break
-    9. 如果某个 case 连续 2 轮 FAIL 且 notes 无变化 → 标 BLOCKED，不再尝试
+        2. 判定本轮根因 cause = product | script
+        3. script 且 scriptRounds[id] >= 10 → 跳过（保留 FAIL，不写报告修复说明）
+           product 且 productRounds[id] >= 3 → 跳过（保留 FAIL，报告写「尝试 3 轮未修复」）
+        4. script：只改 run-cases 该 case 片段；追加 .tple/script-fix-log.jsonl（不写 cases.json、不改最终 notes）
+           product：改业务代码；记录本轮到 cases.json fixLog[]（必填 bug + fix + cause:"product"）
+        5. 对应计数 +1；attempted 加入该 id
+    若 attempted 为空 → break
+    重启 dev server（如需要）
+    仅重派 attempted 的 FAIL case subagent（CASE_ID=…；不跑全量、不并行）
+    汇总更新后的 meta.jsonl（最终 notes = 最近一次 subagent 的产品观察，禁止用脚本轮次摘要覆盖）
+    如果所有 case 都 PASS → break
+    如果某个 case 连续 2 轮 FAIL 且 notes 无变化 → 标 BLOCKED，不再尝试
 ```
 
 #### 刹车机制
 
 | 条件 | 行为 |
 |------|------|
-| 3 轮后仍有 FAIL | 停止，保留 FAIL 状态，报告写明「尝试 3 轮未修复」 |
-| 同一个 case 连续 2 轮 notes 无变化 | 标 BLOCKED，跳过该 case |
-| 单次修复改动 > 5 个文件 | 停止，向用户确认是否继续 |
-| 修复过程中产生新文件 > 3 个 | 停止，向用户确认 |
+| 产品 3 轮后仍 FAIL | 停止该 case，保留 FAIL，报告写明「尝试 3 轮未修复」 |
+| 脚本 10 轮后仍 FAIL | 停止该 case，保留 FAIL；**不**把脚本轮次写进报告 |
+| 同一个 case 连续 2 轮 notes 无变化 | 标 BLOCKED，跳过该 case（脚本/产品均适用，避免空转） |
+| 产品修复单次改动 > 5 个文件 | 停止，向用户确认是否继续 |
+| 产品修复过程中产生新文件 > 3 个 | 停止，向用户确认 |
+
+文件数刹车只约束 **product**。脚本通常只动 `run-cases.mjs`，不要用它提前停掉 locator 调试。
 
 #### 证据采集（每个 FAIL case）
 
@@ -501,15 +519,19 @@ while FAIL count > 0 and round < 3:
 4. **页面快照**：FAIL 时 subagent 或编排立即 `agent-browser snapshot` 拿到的 a11y tree 文本
 5. **case 的 expected 字段**：对比「期望看到什么」vs「实际看到什么」
 
+判定 `script` 的典型信号：selector not found / strict mode / 读到了错节点 / 切 Tab 后立刻断言 / 视频 < 4s 因结束停留不够 / Esc 关弹层但产品未绑 Esc。判定 `product`：页面按脚本步骤走完后，产品行为仍与 `expected` 不符。
+
 #### 修复记录（fixLog）
 
-写入 `meta.jsonl` 的 notes 字段（扩展格式）：
+**`script` 轮次**：只追加工作根 `.tple/script-fix-log.jsonl`（一行一条，`build-report` 不读）。**禁止**写入 `cases.json.bug/fix/fixLog`，**禁止**把「修复 N 轮: R1=locator…」写进最终 `meta.jsonl` notes。
+
+**`product` 轮次**才进报告。`meta.jsonl` notes 用产品修复摘要（不要混入脚本 locator 叙事）：
 
 ```jsonl
-02-db-validation|数据库 Dialog 必填校验|PASS|修复 2 轮: R1=button selector 改为 data-testid, R2=补 onSubmit 校验逻辑
+02-db-validation|数据库 Dialog 必填校验|PASS|修复 1 轮: R1=补 onSubmit 校验逻辑
 ```
 
-写入 `cases.json`（有修复时**必须**填 Bug 点 + 修复方案，报告才会展示）：
+写入 `cases.json`（有**产品**修复时**必须**填 Bug 点 + 修复方案，报告才会展示）：
 
 ```json
 {
@@ -517,17 +539,13 @@ while FAIL count > 0 and round < 3:
     "uc": "UC-5",
     "steps": "...",
     "expected": "...",
+    "cause": "product",
     "bug": "提交空表单未见必填校验文案",
-    "fix": "补 onSubmit 校验；按钮选择器改为 data-testid",
+    "fix": "补 onSubmit 校验",
     "fixLog": [
       {
         "round": 1,
-        "bug": "找不到提交按钮",
-        "fix": "button selector 改为 data-testid",
-        "files": ["src/components/Dialog.tsx"]
-      },
-      {
-        "round": 2,
+        "cause": "product",
         "bug": "空提交无校验提示",
         "fix": "补 onSubmit 必填校验逻辑",
         "files": ["src/components/Dialog.tsx", "src/lib/validate.ts"]
@@ -537,7 +555,7 @@ while FAIL count > 0 and round < 3:
 }
 ```
 
-兼容旧字段 `change`（当作该轮「修复方案」）；报告区块标题为「修复说明」，并分栏展示 **Bug 点** / **修复方案**。
+兼容旧字段 `change`（当作该轮「修复方案」）。`build-report` 只渲染 `cause: "product"`（或未标 cause 且改动了业务文件）的 fixLog；纯脚本 / 仅 `run-cases.mjs` 的条目忽略，无产品修复时不出现「修复说明」。
 
 ---
 
@@ -642,7 +660,7 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 - [ ] index.html 由 `build-report.mjs` 生成（含 `run-meta` 元素），非手写或自定义 HTML；**生成后跑一遍 `build-report.mjs` 自带的媒体校验**——每个 case 的 poster（`videos/<id>.png`）与 `<video>` source 文件必须存在，缺了会裂图/黑块
 - [ ] meta 与页面徽章一致；破坏性操作已恢复
 - [ ] 报告写明录屏方式（Playwright 为主 / 个别分镜或 legacy 回退）
-- [ ] FAIL 的 auto-fix 由编排/单一 Fixer 改代码后重派 subagent，非多 subagent 并行改仓
+- [ ] FAIL 的 auto-fix 由编排/单一 Fixer 先判 `product` / `script` 再改代码后重派；脚本轮次未写入报告「修复说明」，非多 subagent 并行改仓
 - [ ] 【调研模式】核心功能已实际走一遍；真实支付/删除/大量注册/对外发送均经用户明示（未明示的停在提交前一步）
 - [ ] 【调研模式】无凭据时报告明确标注未登录态；有凭据时凭据未写入报告正文
 - [ ] 【调研模式】验证码/付费墙/反爬记 BLOCKED 并如实记录现象，未尝试绕过
@@ -684,7 +702,9 @@ case 备注（`notes`）里附观察（亮点/疑点）；观察项 case 用 `OB
 | 手写新 HTML 主题 / Tailwind 看板风 | 只用本 skill 的 css + templates |
 | 只写 meta.jsonl、跳过 runs.json | 用标准 logCase 同时写两个文件（报告展示「最后跑 / 共跑 N 次」） |
 | 估算 token / 只采最后一个 session 当整次用量 | 编排 + 全部 case subagent usage 合计；禁止编数字 |
-| FAIL 后人工分析、手动改代码 | 用 Step 5：编排 auto-fix + 重派 subagent（最多 3 轮） |
+| FAIL 后人工分析、手动改代码 | 用 Step 5：编排先判 `product` / `script` 再 auto-fix + 重派（脚本 ≤10 / 产品 ≤3） |
+| 把 locator / 等待 / 录屏契约失败写进报告「修复说明」 | 判为 `script`：只改 run-cases，轮次写入 `.tple/script-fix-log.jsonl`，报告只留产品期望 vs 结果 |
+| 脚本问题用完 3 轮就当产品 FAIL | 脚本预算 10 轮；产品 3 轮才停 |
 | 无限制循环修复同一个 case | 连续 2 轮无进展标 BLOCKED，刹车退出 |
 | `click @css-selector` / eval 不加引号就开跑 | 先看 reference.md「最小命令速查」：`@` 只配 ref，eval JS 双引号包裹 |
 | 清理只 `pkill` 不 `close --all`（编排套件级） | 只用 `tple-browser suite-boot|teardown`（内部先 close --all 再 pkill） |

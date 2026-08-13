@@ -133,9 +133,49 @@ function validateMedia(dir, ids, minDuration) {
   if (errors.length > 0) process.exit(1);
 }
 
+const SCRIPT_FILE_RE = /(^|[/\\])run-cases\.mjs$/i;
+const SCRIPT_ROUND_NOTES_RE = /修复\s*\d+\s*轮[:：][^\n]*/g;
+
+function isScriptFile(filePath) {
+  return SCRIPT_FILE_RE.test(String(filePath || "").replaceAll("\\", "/"));
+}
+
+function entryCause(entry) {
+  const cause = String(entry?.cause || "").toLowerCase();
+  if (cause === "script" || cause === "product") return cause;
+  const files = Array.isArray(entry?.files) ? entry.files : [];
+  if (files.length > 0 && files.every(isScriptFile)) return "script";
+  return "product";
+}
+
+function isScriptCase(row) {
+  if (String(row?.cause || "").toLowerCase() === "script") return true;
+  if (String(row?.cause || "").toLowerCase() === "product") return false;
+  const log = Array.isArray(row?.fixLog) ? row.fixLog : [];
+  return log.length > 0 && log.every((entry) => entryCause(entry) === "script");
+}
+
+function productFixLog(row) {
+  if (String(row?.cause || "").toLowerCase() === "script") return [];
+  const log = Array.isArray(row?.fixLog) ? row.fixLog : [];
+  return log.filter((entry) => entryCause(entry) !== "script");
+}
+
 function hasFixInfo(row) {
-  if (row.bug || row.fix) return true;
-  return Array.isArray(row.fixLog) && row.fixLog.length > 0;
+  if (isScriptCase(row)) return false;
+  const productLog = productFixLog(row);
+  if (productLog.length > 0) return true;
+  const log = Array.isArray(row.fixLog) ? row.fixLog : [];
+  if (log.length > 0) return false;
+  return Boolean(row.bug || row.fix);
+}
+
+function sanitizeNotes(row, notes) {
+  if (!isScriptCase(row)) return notes;
+  return String(notes || "")
+    .replace(SCRIPT_ROUND_NOTES_RE, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 const USAGE_SOURCE_LABEL = {
@@ -270,13 +310,14 @@ function renderCommandAudit(caseId, entries) {
 }
 
 /**
- * 有修复时展示：Bug 点 + 修复方案（+ 可选分轮次）
+ * 有产品修复时展示：Bug 点 + 修复方案（+ 可选分轮次）
+ * 纯脚本 / cause:script / 仅 run-cases.mjs 的 fixLog 不渲染
  * 兼容旧字段 change；新字段优先 bug / fix
  */
 function renderFixBlock(row) {
   if (!hasFixInfo(row)) return "";
 
-  const fixLog = Array.isArray(row.fixLog) ? row.fixLog : [];
+  const fixLog = productFixLog(row);
   const summaryBug =
     row.bug ||
     fixLog
@@ -420,9 +461,7 @@ const now = new Date().toISOString();
 // auto-fix summary: how many cases were fixed, max rounds used
 const fixedCases = rows.filter((r) => hasFixInfo(r));
 const maxRound = fixedCases.reduce((m, r) => {
-  const rounds = Array.isArray(r.fixLog)
-    ? r.fixLog.map((f) => Number(f.round) || 0)
-    : [0];
+  const rounds = productFixLog(r).map((f) => Number(f.round) || 0);
   return Math.max(m, ...rounds, 0);
 }, 0);
 const stillFail = rows.filter(
@@ -451,7 +490,7 @@ const sections = rows
       STATUS_LC: esc(String(r.status || "").toLowerCase()),
       STEPS: esc(r.steps || "—"),
       EXPECTED: esc(r.expected || "—"),
-      NOTES: esc(r.notes),
+      NOTES: esc(sanitizeNotes(r, r.notes)),
       LAST_RAN: esc(formatRanAt(r.lastRanAt)),
       RUN_COUNT: esc(String(r.runCount || 0)),
       FAIL_SHOT: failShot,

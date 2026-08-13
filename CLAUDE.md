@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 skill 的能力：按 case 做端到端录屏验收/产品调研，产出带视频的自包含 HTML 报告。双模式（SKILL.md Step 0 判定）：
 
-- **验收模式**：有代码仓库 → 录屏跑 case → FAIL 进 auto-fix loop（改代码重测，≤3 轮）
+- **验收模式**：有代码仓库 → 录屏跑 case → FAIL 进 auto-fix loop（先判 product/script；脚本改 run-cases ≤10 轮不进报告，产品改业务代码 ≤3 轮）
 - **调研模式**：只给网址无代码 → 探索站点出草案 → 录屏调研 → 禁止改任何东西、禁止真实破坏性提交
 
 ## Commands

@@ -9,7 +9,7 @@
 1. 定义测试用例（从用户输入、仓库 CSV、或按项目文档自动生成）
 2. **编排 agent** 锁定 `run-cases.mjs`，再 **按 case 串行派发独立 subagent** 录屏执行（禁止主会话包办全套）
 3. 录屏过短（< 4s）自动回退分镜截图
-4. FAIL case 由编排 auto-fix（最多 3 轮）后**重派**该 case subagent
+4. FAIL case 由编排先判 `product` / `script` 再 auto-fix（脚本最多 10 轮且不进报告，产品最多 3 轮）后**重派**该 case subagent
 5. 生成自包含 HTML 验收报告（侧栏导航 + 视频 + PASS/FAIL/BLOCKED）；usage 为多会话合计
 6. **产品调研模式**：只给网址、无代码——编排探索出草案，确认后同样按 case 派发 subagent 录屏，产出调研报告（不改本地项目、不进 auto-fix）
 7. 项目级 **`tple-memory.md`**（开跑先读、经验追加）+ 运行产物默认落在工作根 **`.tple/<slice>/`**

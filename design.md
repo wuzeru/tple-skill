@@ -69,7 +69,7 @@
 - `h3`：uppercase 小标签（步骤 / 期望 / 结果备注 / 录屏 / 关键帧截图）
 - `.notes`：等宽 + 浅底，放原始结果串
 - `.run-meta`：等宽小字，来自 `runs.json` / meta 可选列
-- 有修复时：`.fix-log` 展示「Bug 点 / 修复方案」双栏 + 可选分轮次（数据来自 `cases.json` 的 `bug`/`fix`/`fixLog`）
+- 有**产品**修复时：`.fix-log` 展示「Bug 点 / 修复方案」双栏 + 可选分轮次（数据来自 `cases.json` 的 `bug`/`fix`/`fixLog`，且 `cause` 为 `product` 或改动了业务文件）；纯脚本 / `cause: script` / 仅 `run-cases.mjs` 的 fixLog 不渲染该区块
 - `video`：`controls playsinline preload="metadata"` + poster png；source 顺序 mp4 → webm
 - 关键帧：`.shot-zoom` 可点击放大（lightbox）；可选 `videos/{id}-fail.png` 作为「失败中间态」第二张图
 
